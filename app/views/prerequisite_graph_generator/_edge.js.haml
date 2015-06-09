@@ -1,0 +1,37 @@
+:javascript
+
+  var Edge = function(source, target, type, group,optional){
+    if(source === undefined || target === undefined){
+      console.log("SOURCE OR TARGET NOT SPECIFIED");
+      return null;
+    }
+
+    this.source = source;
+    this.target = target;
+    this.type = type || RelationshipType.PREREQ;
+    this.optional = optional || false;
+    this.group = group === undefined ? null : group;
+
+  }
+
+  Edge.prototype.getSourceAndTarget = function() {
+    return { source: this.source, target: this.target };
+  }
+
+  Edge.prototype.setGroup = function(group) {
+    this.group = group;
+  }
+
+  Edge.prototype.setOptional = function(optional) {
+    this.optional = optional;
+  }
+
+  Edge.prototype.toJson = function() {
+    return {
+      source: this.source.toJson(),
+      target: this.target.toJson(),
+      type: this.type,
+      optional: this.optional,
+      group: this.group
+    };
+  }

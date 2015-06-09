@@ -12,5 +12,7 @@
 //
 //= require jquery
 //= require jquery_ujs
-//= require turbolinks
+//= require jquery.blockUI
+//= require dataTables/jquery.dataTables
 //= require_tree .
+//= require select2

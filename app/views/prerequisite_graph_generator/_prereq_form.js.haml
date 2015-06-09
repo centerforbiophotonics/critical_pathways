@@ -1,0 +1,368 @@
+%div#closeButtonContainer{:style => 'display: none'}
+  %a{:class => 'close', :id => 'closeButton',:title => 'Close'}X
+
+:javascript
+  //Center object in window
+  $.fn.center = function () {
+    this.css("top", ( $(window).height() - this.height() ) / 2 + "px");
+    this.css("left", ( $(window).width() - this.width() ) / 2 + "px");
+    return this;
+  }
+
+  var PrereqForm = function(callback,parent,node,d3node){
+    //The callback is used to send form data to parent
+    this.callback = callback;
+    this.objRef = parent;
+    this.helper = new Helper();
+
+    //Node that the prerequisites correspond to
+    this.node = node || null;
+
+    //d3node object corresponding to node
+    this.d3node = d3node || null;
+    this.prereqId = 0;
+    this.prereqCount = 0;
+    this.currentPrereqId = 0;
+    this.prereqFormIds = [];
+    this.nextPrereqIds = [];
+  }
+
+
+  PrereqForm.prototype.initializePrereqForm = function(node) {
+    var thisForm = this; 
+    var len = thisForm.prereqFormIds[thisForm.currentPrereqId].length,
+      optionId = thisForm.prereqFormIds[thisForm.currentPrereqId][len - 1];
+
+    console.log(thisForm);
+    //Initialize select2s
+    $("#course_subj_code_select_"+thisForm.currentPrereqId+'_'+optionId).select2({
+      placeholder: 'Subject Code'
+    });
+
+    $("#course_num_select_"+thisForm.currentPrereqId+'_'+optionId).select2({
+      placeholder: 'Course Number'
+    });
+
+    $("#prereq_type_select_"+thisForm.currentPrereqId+'_'+optionId).select2({
+      placeholder: 'Requirement Type'
+    });
+
+    //Add new prerequisite
+    $("#add_prereq_"+thisForm.currentPrereqId+'_'+optionId).on("click", function(e){
+      var prereqId = thisForm.prereqId - 1;
+
+      //Find last div in form and append new div after it
+      for(var i = thisForm.prereqId - 1; i >= 0;i--)
+        if($("#prereq_"+i).length){
+          prereqId = i;
+          break;
+        }
+
+      //Add new prerequisite  
+      thisForm.addNewPrereq.call(thisForm,prereqId);
+    });
+
+    //Add alternative prerequisite
+    $("#add_alternative_prereq_"+thisForm.currentPrereqId+'_'+optionId).on("click", function(e) {
+      var prereqId = parseInt(e.target.id.split('_')[3]),
+        optId = parseInt(e.target.id.split('_')[4]);
+
+      thisForm.addAlternativePrereq.call(thisForm,prereqId,optId);
+    });
+
+    //Delete subform for prereq
+    $("#remove_prereq_"+thisForm.currentPrereqId+'_'+optionId).on("click", function(e){
+      var prereqId = parseInt(e.target.id.split('_')[2]);
+      var optId = parseInt(e.target.id.split('_')[3]);
+
+      //Don't delete if last prereq
+      if(thisForm.prereqFormIds[prereqId].length > 1){
+        var indexToRemove = thisForm.prereqFormIds[prereqId].indexOf(optId);
+        $("#prereq_"+prereqId+'_'+optId).remove();
+
+        if(indexToRemove > 0)
+          $("#or_"+prereqId+"_"+thisForm.prereqFormIds[prereqId][indexToRemove - 1]).remove();
+        else if(indexToRemove === 0)
+          $("#or_"+prereqId+"_"+thisForm.prereqFormIds[prereqId][indexToRemove]).remove();
+
+        thisForm.prereqFormIds[prereqId].splice(indexToRemove,1);
+
+        //Center the now smaller form
+        $('.blockUI.blockMsg').center();
+      }else if(thisForm.prereqCount > 1){
+        $("#prereq_"+prereqId).remove();
+        thisForm.prereqCount--;
+        thisForm.prereqFormIds[prereqId] = [];
+        thisForm.nextPrereqIds[prereqId] = 0;
+        //Center the now smaller form
+        $('.blockUI.blockMsg').center();
+      }
+    })
+
+    //Update values is course number select when subject code is changed
+    $("#course_subj_code_select_"+thisForm.currentPrereqId+'_'+optionId).on("change", function(e){
+      var id = parseInt(e.target.id.split('_')[4]),
+        optionId = parseInt(e.target.id.split('_')[5]);
+      thisForm.updateCourseNumSelect.call(thisForm, d3.select(this), node, id, optionId);
+    });
+
+  }
+
+
+  PrereqForm.prototype.addNewPrereq = function(prereqId) {
+    var thisForm = this,
+      node = this.node;
+
+    thisForm.currentPrereqId = thisForm.prereqId;
+    thisForm.nextPrereqIds.push(0);
+    thisForm.prereqFormIds.push([0]);
+
+    //Generate new subform
+    $("#prereq_"+prereqId).after(thisForm.generatePrereqForm.call(thisForm));
+
+    //Center the now larger dialog box
+    $('.blockUI.blockMsg').center();
+
+    //Initialize new subform
+    thisForm.prereqId++;
+    thisForm.prereqCount++;
+    thisForm.initializePrereqForm(node);    
+  }
+
+  PrereqForm.prototype.addAlternativePrereq = function(prereqId, optId) {
+    var thisForm = this,
+      node = this.node;
+
+    thisForm.currentPrereqId = prereqId;
+    thisForm.nextPrereqIds[prereqId]++;
+    thisForm.prereqFormIds[prereqId].push(thisForm.nextPrereqIds[prereqId]);
+
+    //Generate subform, center dialog box, and initialize form and its handlers
+    $("#prereq_"+prereqId+'_'+optId).after(thisForm.generatePrereqForm.call(thisForm));
+    $('.blockUI.blockMsg').center();
+    thisForm.initializePrereqForm(node);
+  }
+
+  //Update courses for new subject code
+  PrereqForm.prototype.updateCourseNumSelect = function(d3path, d, id, optionId) {
+    var thisForm = this,
+      options_str = '<option></option>',
+      id_concat = (id !== undefined) ? ('_'+id) : '',
+      optionId_concat = (optionId !== undefined) ? ('_'+optionId) : '',
+      subj_code = $("#course_subj_code_select"+id_concat+optionId_concat).val(),
+      new_options = course_data[subj_code];
+
+    //Clear old options
+    $("#course_num_select"+id_concat+optionId_concat).html('');
+
+    //Add new options
+    for(var course_num in new_options){
+      options_str += '<option value="'+course_num+'">'+course_num+': '+new_options[course_num]["ctitle"]+'</option>';
+    }
+
+    $("#course_num_select"+id_concat+optionId_concat).html(options_str);
+    $("#course_num_select"+id_concat+optionId_concat).change();
+  }
+
+  PrereqForm.prototype.closeForm = function(e) {
+    var thisForm = this;
+
+    if(confirm('Any unsaved changes will be lost.  Close anyways?')){
+      $.unblockUI(); 
+      thisForm.prereqCount = 0;
+      thisForm.prereqId = 0;
+      return true;
+    }else
+      return false;
+  }
+
+  //Initialize form and dialog box
+  PrereqForm.prototype.setCourseRequirements = function() {
+    var thisForm = this,
+      node = thisForm.node;
+
+    thisForm.prereqId = 0;
+    thisForm.prereqCount = 0;
+    thisForm.currentPrereqId = 0;
+    thisForm.prereqFormIds = [[0]];
+    thisForm.nextPrereqIds = [0];
+
+    var myCss =   {
+      cursor: "pointer",
+    }
+
+    $.blockUI({message: thisForm.requirementsFormHtml(), css: myCss, bindEvents: false });
+    $('.blockUI.blockMsg').addClass('myBlockUI');
+    thisForm.prereqCount++;
+    thisForm.prereqId++;
+
+    var callCloseForm = function(e){ return thisForm.closeForm.call(thisForm, e) }
+
+    $(".blockUI.blockMsg #closeButton").off("click", callCloseForm).on("click", callCloseForm);
+
+    $("#save_prereqs").click(function(e){
+      thisForm.validateAndSubmit.call(thisForm, e);
+    });
+
+    console.log('REQUIREMENTS',node.course.requirements);
+    if(node.course.requirements.length === 0){
+      //New set of requirements
+      thisForm.initializePrereqForm(node);
+    }else {
+      //Requirements have previously been set for this course
+      var first = true;
+      node.course.requirements.forEach(function(req, i){
+        var optId = 0;
+        if(thisForm.helper.isArray(req)){
+          //Create form element for this list of options for a prereq
+          req.forEach(function(r, j){
+            optId = j;
+            if(first){
+              thisForm.initializePrereqForm(node);
+              first = false;
+            }else if(j === 0){
+              thisForm.addNewPrereq.call(thisForm,i - 1);
+            }else {
+              thisForm.addAlternativePrereq.call(thisForm,i,j - 1);
+            }
+
+            $("#course_subj_code_select_"+i+"_"+optId).val(r.node.course.course_subj_code).change();
+            $("#course_num_select_"+i+"_"+optId).val(r.node.course.course_num.toString()).change();
+            $("#prereq_type_select_"+i+"_"+optId).val(r.requirement_type).change();
+          });
+        }else{
+          //Single prereq
+          if(first){
+            thisForm.initializePrereqForm(node);
+            first = false;            
+          } else {
+            thisForm.addNewPrereq.call(thisForm,i - 1);
+          }
+
+          $("#course_subj_code_select_"+i+"_"+optId).val(req.node.course.course_subj_code).change();
+          $("#course_num_select_"+i+"_"+optId).val(req.node.course.course_num.toString()).change();
+          $("#prereq_type_select_"+i+"_"+optId).val(req.requirement_type).change();
+        }
+      });
+    }
+  }
+
+  PrereqForm.prototype.validateAndSubmit = function(e){
+    e.preventDefault();
+    var thisForm = this,
+      valid = true,
+      course = null,
+      prereqs = [],
+      course_defined = thisForm.node.course.course_subj_code != null 
+        && thisForm.node.course.course_num != null;
+
+    if(course_defined){
+      course = thisForm.node.course;
+    }
+
+    console.log('prereqFormIds',thisForm.prereqFormIds);
+    thisForm.prereqFormIds.forEach(function(requirement, reqId){
+      if(valid){
+        prereqs[prereqs.length] = [];
+        requirement.forEach(function(option){
+          if(valid && $('#course_subj_code_select_'+reqId+'_'+option).length 
+                && $('#course_num_select_'+reqId+'_'+option).length 
+                && $('#prereq_type_select_'+reqId+'_'+option).length)
+          {
+            var subj_code = $('#course_subj_code_select_'+reqId+'_'+option).val(),
+              course_num = $('#course_num_select_'+reqId+'_'+option).val(),
+              ctitle = course_data[subj_code][course_num]['ctitle'],
+              prereq_type = parseInt($('#prereq_type_select_'+reqId+'_'+option).val());
+
+            if(subj_code === "" || course_num === "" || prereq_type === ""){
+              alert('One or more fields have not been filled in');
+              valid = false;
+            }else {
+              if(course && course.course_subj_code === subj_code && course.course_num === course_num){
+                alert('A course cannot be a prerequisite for itself');
+                valid = false;
+              }else {
+                prereqs[prereqs.length - 1].push({
+                  course_subj_code: subj_code,
+                  course_num: course_num,
+                  ctitle: ctitle,
+                  requirement_type: prereq_type
+                });
+              }
+            }
+          }
+        });
+      }
+    });
+
+    if(valid){
+      thisForm.callback.call(thisForm.objRef,thisForm.node,prereqs);
+      $.unblockUI();
+    }
+
+    return valid;
+  }
+
+  //Generate html for course subject code select
+  PrereqForm.prototype.courseSubjectCodes = function() {
+    var select_html = '';
+    var first = false;
+
+    for(var subj_code in course_data){
+      select_html += '<option value="'+subj_code+'" '+(first ? 'selected' : '')+'>'+subj_code+'</option>';
+
+      if(first)
+        first = false;
+    }
+
+    return select_html;
+  }
+
+  //Generate html for blockUI message
+  PrereqForm.prototype.requirementsFormHtml = function() {
+    var thisForm = this;
+
+    return (
+      '<div class="prereq_form">'+
+      '<h1>Define Prerequisites for this Course</h1>'+
+      $('#closeButtonContainer').html() +
+       thisForm.generatePrereqForm() +
+      '<div id="select2parent" style="display: none"></div>'+
+      '<button id="save_prereqs" style="margin-top: 5px">Save Prerequisites</button>'+
+      '</div>'
+    );
+  }
+
+
+  //Generate html for prereq subform
+  PrereqForm.prototype.generatePrereqForm = function() {
+    var thisForm = this,
+      prereqId = thisForm.currentPrereqId,
+      len = thisForm.prereqFormIds[prereqId].length,
+      prevOptId = thisForm.prereqFormIds[prereqId][len - 2],
+      optionId = thisForm.nextPrereqIds[prereqId];
+
+    return (
+      (prereqId == thisForm.prereqId ? ('<div id="prereq_'+prereqId+'" class="prereqDiv">') : '<h3 id="or_'+prereqId+'_'+prevOptId+'">OR</h3>')+
+        '<div id="prereq_'+prereqId+'_'+optionId+'" class="prereqDiv">'+
+          '<select id="course_subj_code_select_'+prereqId+'_'+optionId+'" style="margin:5px;width:30%">'+
+            '<option></option>'+
+            thisForm.courseSubjectCodes() +
+          '</select>'+
+          '<select id="course_num_select_'+prereqId+'_'+optionId+'" style="margin:5px;width:30%">'+
+            '<option></option>'+
+          '</select>' +
+          '<select id="prereq_type_select_'+prereqId+'_'+optionId+'" style="margin:5px;width: 30%">'+
+            '<option></option>'+
+            '<option value=0>Prerequisite</option>' +
+            '<option value=1>May be taken concurrently</option>' +
+            '<option value=2>Must be taken concurrently</option>' +
+            '<option value=3>Recommended</option>' +
+          '</select>' +
+          '<button style="margin: 5px" id="add_prereq_'+prereqId+'_'+optionId+'">Add New Prerequisite</button>'+
+          '<button style="margin: 5px" id="add_alternative_prereq_'+prereqId+'_'+optionId+'">Add Alternative Prerequisite</button>'+
+          '<button style="margin: 5px" id="remove_prereq_'+prereqId+'_'+optionId+'">Delete Prerequisite</button>'+
+        '</div>'+
+      (prereqId == thisForm.prereqId ? '</div>' : '')
+    );
+  }

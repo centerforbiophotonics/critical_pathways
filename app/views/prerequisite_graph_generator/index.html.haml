@@ -1,0 +1,178 @@
+%div#sidr
+  %ul
+    %h1 Legend
+    %li
+      %a{:id => 'prereqTypesHeader'} Requirement Types
+      %ul{:id => 'prereqTypes', :style => 'display: none'}
+        %li
+          %p{:style => 'line-height: 20px'}
+            Four types of course prerequisites are supported: 'Prerequisite', 'May be taken conurrently',
+            'Must be taken concurrently', and 'Recommended'.  The default is 'Prerequisite' and the requirement
+            type can be changed by shift-clicking on already existing paths and selecting the requirement type
+            in the form that will appear.
+        %li
+          %a
+            Prerequisite
+            %svg{:id => 'prereqSvg', :style => "width: 200px; height: 48px; background-color: #FFF"}
+              %path{:class => 'PREREQ', :d => 'M20,25L170,25',:style => "marker-end: url(#end); stroke: #333"}
+        %li
+          %a
+            May be taken concurrently
+            %svg{:id => 'coreqSvg', :style => "width: 200px; height: 48px; background-color: #FFF"}
+              %path{:class => 'COREQ', :d => 'M20,25L170,25',:style => "marker-start: url(#coreq-start) !important; marker-end: url(#end); stroke: #333"}
+        %li
+          %a
+            Must be taken concurrently
+            %svg{:id => 'coreqStrictSvg', :style => "width: 200px; height: 48px; background-color: #FFF"}
+              %path{:class => 'COREQ_STRICT', :d => 'M20,25L170,25',:style => "marker-start: url(#coreq-strict-start) !important; marker-end: url(#end); stroke: #333"}
+        %li
+          %a
+            Recommended
+            %svg{:id => 'recommendedSvg', :style => "width: 200px; height: 48px; background-color: #FFF"}
+              %path{:class => 'COREQ', :d => 'M20,25L170,25',:style => "marker-start: url(#recommended-start) !important; marker-end: url(#end); stroke: #333"}
+        %li
+          %p{:style => 'line-height: 20px'} 
+            *Note: A dashed line is used to represent a prerequisite relationship in which the prerequisite
+            course is one of multiple options that can be taken to fulfill a requirement for the subsequent course.
+            The group of lines connecting groups of courses like this to the subsequent course are distinguished from 
+            other groups by their color.  
+    %li
+      %a#nodeHeader Courses
+      %ul{:id => 'nodeLegend', :style => 'display: none'}
+        %li
+          %a{:style => 'width: 230px; height: 110px'}
+            %svg{:id => 'nodeSvg', :style => 'width: 200px; height: 110px'}
+              %g.conceptGCOPY{:transform => 'translate(100,55)'}
+                %circle{:r => '50'}
+                %text{:'text-anchor' => 'middle', :dy => '-7.5'}
+                  %tspan ECS
+                  %tspan{:x => '0', :dy => '15'}='060'
+        %li
+          %p{:style => 'line-height: 20px'}
+            Each circle represents a course.  To add a new course, shift-click somewhere on the page.
+            A circle and a small form will appear in which you can define the course and its prerequisites
+            by clicking the 'Set Prerequisites' button and defining each individual prerequisite.  Alternatively, you can
+            define prerequisite relationships between already defined courses by shift-clicking the prerequisite and dragging
+            the line to the desired course.
+%a#simple-menu{:href => "#sidr", :style => 'transition: 200ms',:class => "button tiny"}="Toggle Legend"
+
+%div#graph_div
+
+%div#toolbox{:style => 'transition: 200ms'}
+  %div{:id => 'download_div'}
+    %a Save graph or course info only?
+    %br
+    %button#download_graph{:style => 'width: 45%; margin-right: 5%'} Graph
+    %button#download_course_info{:style => 'width: 45%'} Course Info
+  %input{:type => "file", :id => "hidden-file-upload"}
+  %input{:id => "upload-input", :type => "image", :title => "Upload Graph", :src => asset_path("upload-icon.png"), :alt => "Upload Graph"}
+  %input{:type => "image", :id => "download-input", :title => "Download Graph", :src => asset_path("download-icon.png"), :alt => "Download Graph"}
+  %input{:type => "image", :id => "delete-graph", :title => "Delete Graph", :src => asset_path("trash-icon.png"), :alt => "Delete Graph"} 
+
+%div#radius_slider_div
+  %label Circle Radius
+  %input{:id => 'radius_slider', :type => 'range', :min => '30', :max => '50', :step => '1', :value => '40'}
+
+%script(src="//cdn.jsdelivr.net/filesaver.js/0.1/FileSaver.min.js")
+=render :partial => 'enums.js'
+=render :partial => 'helper.js'
+=render :partial => 'jquery.sidr.min.js'
+=render :partial => 'course.js'
+=render :partial => 'node.js'
+=render :partial => 'edge.js'
+=render :partial => 'prereq_form.js'
+=render :partial => 'graph_generator.js'
+=render :partial => 'course_groups.js'
+
+:javascript
+  var course_data = {};
+  $(document).ready(function() {
+    $('#simple-menu').sidr({
+      displace: false,
+      onOpen: shiftLinksRight,
+      onClose: shiftLinksLeft
+    });
+
+    $.getJSON("#{asset_url("courses.json")}",function(data){ course_data = data });
+
+    $("#radius_slider").on("change", function(e){
+      var radius = parseInt($("#radius_slider").val());
+      graph.updateNodeRadius.call(graph,radius);
+    });
+
+    function addEndMarker(svgId){
+      var svg = d3.select(svgId);
+      var defs = svg.append('svg:defs');
+      defs.append('svg:marker')
+        .attr('id', 'end')
+        .attr('viewBox', '0 -5 10 10')
+        .attr('refX', "0")
+        .attr('markerWidth', 3.5)
+        .attr('markerHeight', 3.5)
+        .attr('orient', 'auto')
+        .append('svg:path')
+        .attr('d', 'M0,-5L10,0L0,5');
+    }
+
+    function initializeDefs(){
+      var svgIds = ['#prereqSvg','#coreqSvg','#coreqStrictSvg','#recommendedSvg'], defs;
+
+      svgIds.forEach(addEndMarker);
+
+      defs = d3.select(svgIds[3]+' defs');
+      defs.append('svg:marker')
+        .attr('id', 'recommended-start')
+        .attr('viewBox', '-5 -5 10 10')
+        .attr('refX', "0")
+        .attr('markerWidth', 3.5)
+        .attr('markerHeight', 3.5)
+        .attr('orient', 'auto')
+        .append('svg:path')
+        .attr('d', 'M 0,0 m -5,-5 L 5,-5 L 5,5 L -5,5 Z');
+
+      defs = d3.select(svgIds[1]+' defs');
+      defs.append('svg:marker')
+        .attr('id', 'coreq-start')
+        .attr('viewBox', '-6 -6 12 12')
+        .attr('refX', "0")
+        .attr('markerWidth', 3.5)
+        .attr('markerHeight', 3.5)
+        .attr('orient', 'auto')
+        .append('svg:path')
+        .attr('d', 'M 0, 0  m -5, 0  a 5,5 0 1,0 10,0  a 5,5 0 1,0 -10,0')
+        .style("stroke-width", 1)
+        .style("fill", "#fff")
+        .style("stroke", "#333");
+
+      defs = d3.select(svgIds[2]+ ' defs');
+      defs.append('svg:marker')
+        .attr('id', 'coreq-strict-start')
+        .attr('viewBox', '-6 -6 12 12')
+        .attr('refX', "0")
+        .attr('markerWidth', 3.5)
+        .attr('markerHeight', 3.5)
+        .attr('orient', 'auto')
+        .append('svg:path')
+        .attr('d', 'M 0, 0  m -5, 0  a 5,5 0 1,0 10,0  a 5,5 0 1,0 -10,0');
+    }
+
+    function initializeSidrElements(){
+      initializeDefs();
+
+      $("#prereqTypesHeader").click(function(e){ $("#prereqTypes").slideToggle() });
+      $("#nodeHeader").click(function(e){ $("#nodeLegend").slideToggle() });
+    }
+
+    initializeSidrElements();
+    function shiftLinksRight(){
+      $("#links").css('margin-left', '260px');
+      $("#toolbox").css('margin-left', '260px')
+      $("#simple-menu").css('margin-left', '270px');
+    }
+
+    function shiftLinksLeft(){
+      $("#links").css('margin-left', '');
+      $("#toolbox").css('margin-left','')
+      $("#simple-menu").css('margin-left', '10px');
+    }
+  });

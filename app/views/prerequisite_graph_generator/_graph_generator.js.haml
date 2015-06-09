@@ -1,0 +1,1702 @@
+:javascript
+  var graph = null;
+  document.onload = (function(d3, saveAs, Blob, undefined){
+    "use strict";
+
+    // define graphcreator object
+    var GraphCreator = function(svg, parentId, nodes, edges){
+      var thisGraph = this;
+
+      thisGraph.parentId = parentId;
+      thisGraph.idct = 0;
+      thisGraph.edgeGrp = 0;
+      thisGraph.prereqForm = null;
+      thisGraph.scale = 1.0;
+      thisGraph.translate = [0,0];
+      thisGraph.nodeRadius = 40;
+      /*  We have added a course attribute to each node.
+      *  This course object has the members 'course_subj_code' 
+      * which is the course subject code as shown in course catalog, course_num,
+      * which is that course's number for that specific subject code as shown in
+      * the course catalog, and times_offered, which is the expected number of times
+      * the course will be offered in a four year period
+      */
+      thisGraph.nodes = nodes || [];
+
+      /*Each element of edges has had type and group attributes added.
+      * Type represents the kind of relationship that the source and target share
+      * and group is the group an edge belongs to, e.g. a group of courses that are
+      * all required will be a group and a group of M classes from which a student
+      * must choose N will be a group
+      */
+      thisGraph.edges = edges || [];
+      
+      //Keeps track of tooltip element
+      thisGraph.tooltipDiv = null;
+      thisGraph.tooltipEdge = null;
+      thisGraph.tooltipNode = null;
+
+      thisGraph.colorScale = [];
+
+      thisGraph.prereqContainer = {
+        node: null,
+        prereqs: []
+      }
+
+      thisGraph.deleteForm = false;
+      thisGraph.helper = new Helper();
+      thisGraph.optionalGroups = [];
+      /*This value will be appended to select ids
+        in prerequisite forms
+      */
+
+      thisGraph.state = {
+        selectedNodes: [],
+        selectedEdge: null,
+        mouseDownNode: null,
+        mouseDownLink: null,
+        draggableSelection: false,
+        selectionDragged: false,
+        justDragged: false,
+        justScaleTransGraph: false,
+        lastKeyDown: -1,
+        shiftNodeDrag: false,
+        selectedText: null
+      };
+
+      // define arrow markers for graph links
+      var defs = svg.append('svg:defs');
+      defs.append('svg:marker')
+        .attr('id', 'end-arrow')
+        .attr('viewBox', '0 -5 10 10')
+        .attr('refX', "32")
+        .attr('markerWidth', 3.5)
+        .attr('markerHeight', 3.5)
+        .attr('orient', 'auto')
+        .append('svg:path')
+        .attr('d', 'M0,-5L10,0L0,5');
+
+      // define arrow markers for leading arrow
+      defs.append('svg:marker')
+        .attr('id', 'mark-end-arrow')
+        .attr('viewBox', '0 -5 10 10')
+        .attr('refX', 7)
+        .attr('markerWidth', 3.5)
+        .attr('markerHeight', 3.5)
+        .attr('orient', 'auto')
+        .append('svg:path')
+        .attr('d', 'M0,-5L10,0L0,5');
+
+      defs.append('svg:marker')
+        .attr('id', 'recommended-start-arrow')
+        .attr('viewBox', '-5 -5 10 10')
+        .attr('refX', "-29")
+        .attr('markerWidth', 3.5)
+        .attr('markerHeight', 3.5)
+        .attr('orient', 'auto')
+        .append('svg:path')
+        .attr('d', 'M 0,0 m -5,-5 L 5,-5 L 5,5 L -5,5 Z');
+
+      defs.append('svg:marker')
+        .attr('id', 'coreq-start-arrow')
+        .attr('viewBox', '-6 -6 12 12')
+        .attr('refX', "-33")
+        .attr('markerWidth', 3.5)
+        .attr('markerHeight', 3.5)
+        .attr('orient', 'auto')
+        .append('svg:path')
+        .attr('d', 'M 0, 0  m -5, 0  a 5,5 0 1,0 10,0  a 5,5 0 1,0 -10,0')
+        .style("stroke-width", 1)
+        .style("fill", "#fff")
+        .style("stroke", "#333");
+
+      defs.append('svg:marker')
+        .attr('id', 'strict-coreq-start-arrow')
+        .attr('viewBox', '-6 -6 12 12')
+        .attr('refX', "-33")
+        .attr('markerWidth', 3.5)
+        .attr('markerHeight', 3.5)
+        .attr('orient', 'auto')
+        .append('svg:path')
+        .attr('d', 'M 0, 0  m -5, 0  a 5,5 0 1,0 10,0  a 5,5 0 1,0 -10,0');
+
+      thisGraph.svg = svg;
+      thisGraph.svgG = svg.append("g")
+            .classed(thisGraph.consts.graphClass, true);
+      var svgG = thisGraph.svgG;
+
+      thisGraph.svgWidth = parseInt(d3.select(parentId + ' svg').attr("width"));
+      thisGraph.svgHeight = parseInt(d3.select(parentId + ' svg').attr("height"));
+      thisGraph.yearDividers = [{},{},{}];
+      var divisionWidth = thisGraph.svgWidth / 4;
+      for(var i = 0; i < 3;i++){
+        thisGraph.yearDividers[i].x1 = divisionWidth * (i + 1);
+        thisGraph.yearDividers[i].x2 = thisGraph.yearDividers[i].x1;
+        thisGraph.yearDividers[i].y1 = 0;
+        thisGraph.yearDividers[i].y2 = thisGraph.svgHeight;
+      }
+      thisGraph.dividers = svg.selectAll("line")
+        .data(thisGraph.yearDividers);
+
+      thisGraph.dividers.enter()
+        .append("line")
+        .attr("x1", function(d){ return d.x1; })
+        .attr("x2", function(d){ return d.x2; })
+        .attr("y1", function(d){ return d.y1; })
+        .attr("y2", function(d){ return d.y2; })
+        .style("stroke", "#000")
+        .style("stroke-dasharray", (10, 10));
+
+      var years = [{},{},{},{}];
+
+      for(var i = 0; i < 4; i++){
+        if(i === 1 || i === 2)
+          years[i].x = (thisGraph.yearDividers[i].x1 + thisGraph.yearDividers[i - 1].x1) / 2;
+        else if(i === 0)
+          years[i].x = divisionWidth / 2;
+        else if(i == 3)
+          years[i].x = thisGraph.svgWidth - (divisionWidth / 2);
+
+        years[i].y = 20;
+        years[i].text = "Year " + (i+1);
+      }
+
+      thisGraph.yearLabels = svg.selectAll("text.yearLabels")
+        .data(years);
+
+      thisGraph.yearLabels.enter()
+        .append("text")
+        .classed("yearLabels", true)
+        .attr("x", function(d, i){ return d.x - 21.5})
+        .attr("y", function(d){ return d.y })
+        .text(function(d){ return d.text });
+
+      // displayed when dragging between nodes
+      thisGraph.dragLine = svgG.append('svg:path')
+            .attr('width', '100%')
+            .attr('height', '100%')
+            .attr('class', 'PREREQ dragline hidden')
+            .attr('d', 'M0,0L0,0')
+            .style('marker-end', 'url(#mark-end-arrow)');
+
+      // svg nodes and edges 
+      thisGraph.paths = svgG.append("g").selectAll("g");
+      thisGraph.circles = svgG.append("g").selectAll("g");
+
+      thisGraph.drag = d3.behavior.drag()
+        .origin(function(d){
+          return {x: d.x, y: d.y};
+        })
+        .on("drag", function(d){
+          //CHANGED: justDragged = true was commented out
+          //thisGraph.state.justDragged = true;
+          thisGraph.dragmove.call(thisGraph, d,this);
+        })
+        .on("dragend", function() {
+          thisGraph.dragLine.classed("hidden", true);
+          // todo check if edge-mode is selected
+        });
+
+      // listen for key events
+      d3.select(window).on("keydown", function(){
+        thisGraph.svgKeyDown.call(thisGraph);
+      })
+      .on("keyup", function(){
+        thisGraph.svgKeyUp.call(thisGraph);
+      });
+      svg.on("mousedown", function(){
+        thisGraph.svgMouseDown.call(thisGraph, svg, this);
+      });
+      svg.on("mousemove", function(d){
+        thisGraph.svgMouseMove.call(thisGraph, svg, this);
+      });
+      svg.on("mouseup", function(d){thisGraph.svgMouseUp.call(thisGraph, svg,this);});
+
+      // listen for dragging
+      var dragSvg = d3.behavior.zoom()
+            .on("zoom", function(){
+              if (d3.event.sourceEvent.shiftKey){
+                // TODO  the internal d3 state is still changing
+                return false;
+              } else{
+                //thisGraph.zoomed.call(thisGraph);
+              }
+              return true;
+            })
+            .on("zoomstart", function(){
+              var ael = d3.select("#" + thisGraph.consts.activeEditId).node();
+              if (ael){
+                ael.blur();
+              }
+              if (!d3.event.sourceEvent.shiftKey) d3.select('body').style("cursor", "move");
+            })
+            .on("zoomend", function(){
+              d3.select('body').style("cursor", "auto");
+            });
+      
+      svg.call(dragSvg).on("dblclick.zoom", null);
+
+      // listen for resize
+      window.onresize = function(){thisGraph.updateWindow.call(thisGraph,svg);};
+
+      // handle download data
+      d3.select("#download-input").on("click", function(){
+        $("#download_div").slideToggle();
+      });
+
+      d3.select('#download_course_info').on("click", function(){
+        var headers = ["Course","Fall Offerings","Winter Offerings","Spring Offerings","Summer Offerings",
+          "Fall Avg Size","Winter Avg Size", "Spring Avg Size", "Summer Avg Size",
+          "Min Prior Quarters","Number Dependent Courses"];
+
+        $("#download_div").slideToggle();
+      });
+
+      d3.select('#download_graph').on("click", function(){
+        var saveEdges = [];
+        var saveNodes = [];
+        var optionalGroups = [];
+
+
+        $("#download_div").slideToggle();
+        thisGraph.edges.forEach(function(val, i){
+          saveEdges.push(val.toJson());
+        });
+
+        thisGraph.nodes.forEach(function(val,i){
+          saveNodes.push(val.toJson());
+        });
+
+        optionalGroups = thisGraph.optionalGroups;
+
+        var blob = new Blob([window.JSON.stringify({"width": thisGraph.svgWidth, "height": thisGraph.svgHeight, "nodes": saveNodes, "edges": saveEdges, "optionalGroups": optionalGroups})], {type: "text/plain;charset=utf-8"});
+        var filename = prompt("Please enter the name of the file you want to save to (will save with .json extension)");
+
+        if(filename === "" || (filename !== null && filename.trim() === ""))
+          alert('Filename cannot be blank');
+        else if(filename && filename !== "null")
+          saveAs(blob, filename+".json");
+      });
+
+
+      // handle uploaded data
+      d3.select("#upload-input").on("click", function(){
+        document.getElementById("hidden-file-upload").click();
+      });
+
+      d3.select("#hidden-file-upload").on("change", function(){
+        if (window.File && window.FileReader && window.FileList && window.Blob) {
+          var uploadFile = this.files[0];
+          var filereader = new window.FileReader();
+          
+          filereader.onload = function(){
+            var txtRes = filereader.result;
+            // TODO better error handling
+            try{
+              var jsonObj = JSON.parse(txtRes);
+              thisGraph.deleteGraph(true);
+
+              thisGraph.nodes = [];
+              var width = jsonObj.width;
+              var height = jsonObj.height;
+
+              jsonObj.nodes.forEach(function(node, i){
+                node.x *= (thisGraph.svgWidth / width);
+                node.y *= (thisGraph.svgHeight / height);
+                thisGraph.nodes[i] = Node.prototype.fromJson(node);
+              })
+
+              thisGraph.setIdCt(jsonObj.nodes.length + 1);
+              var newEdges = [];
+              var tempEdges = jsonObj.edges;
+              tempEdges.forEach(function(e, i){
+                newEdges[i] = new Edge(thisGraph.nodes.filter(function(n){return n.id === e.source.id;})[0],
+                                thisGraph.nodes.filter(function(n){return n.id === e.target.id;})[0],
+                                e.type,e.group,e.optional);
+              });
+              thisGraph.optionalGroups = jsonObj.optionalGroups;
+              thisGraph.edges = newEdges;
+              thisGraph.updateGraph();
+            }catch(err){
+              window.alert("Error parsing uploaded file\nerror message: " + err.message);
+              return;
+            }
+          };
+          filereader.readAsText(uploadFile);
+          
+        } else {
+          alert("Your browser won't let you save this graph -- try upgrading your browser to IE 10+ or Chrome or Firefox.");
+        }
+
+      });
+
+      // handle delete graph
+      d3.select("#delete-graph").on("click", function(){
+        thisGraph.deleteGraph(false);
+      });
+    };
+
+    GraphCreator.prototype.setIdCt = function(idct){
+      this.idct = idct;
+    };
+
+    GraphCreator.prototype.consts =  {
+      selectedClass: "selected",
+      connectClass: "connect-node",
+      circleGClass: "conceptG",
+      graphClass: "graph",
+      activeEditId: "active-editing",
+      BACKSPACE_KEY: 8,
+      DELETE_KEY: 46,
+      ENTER_KEY: 13,
+      SHIFT_KEY: 16
+    };
+
+    /* PROTOTYPE FUNCTIONS */
+
+    GraphCreator.prototype.dragmove = function(d,eThis) {
+      var thisGraph = this;
+
+      if (thisGraph.state.shiftNodeDrag){
+        thisGraph.dragLine.attr('d', 'M' + d.x + ',' + d.y + 'L' + d3.mouse(thisGraph.svgG.node())[0] + ',' + d3.mouse(this.svgG.node())[1]);
+      } else {
+        var selection = d3.selectAll('.selected');
+
+        if(selection[0].indexOf(eThis) === -1) {
+            selection.classed("selected", false);
+            thisGraph.state.selectedNodes = [];
+            selection = d3.select(eThis);
+            selection.classed("selected", true);
+            thisGraph.state.selectedNodes.push(d);
+        } 
+
+        selection.attr("transform", function(d) {
+            d.x += d3.event.dx;
+            d.y += d3.event.dy;
+            return "translate(" + [ d.x,d.y ] + ")"
+        })
+            // reappend dragged element as last 
+            // so that its stays on top 
+        eThis.parentNode.appendChild(eThis);
+        //d3.event.sourceEvent.stopPropagation();
+        thisGraph.updateGraph();
+      }
+    };
+
+    GraphCreator.prototype.deleteGraph = function(skipPrompt){
+      var thisGraph = this,
+          doDelete = true;
+      if (!skipPrompt){
+        doDelete = window.confirm("Press OK to delete this graph");
+      }
+      if(doDelete){
+        thisGraph.setIdCt(0);
+        thisGraph.edgeGrp = 0;
+        thisGraph.colorScale = [];
+        thisGraph.optionalGroups = [];
+        thisGraph.nodes = [];
+        thisGraph.edges = [];
+        thisGraph.updateGraph();
+      }
+    };
+
+    /* select all text in element: taken from http://stackoverflow.com/questions/6139107/programatically-select-text-in-a-contenteditable-html-element */
+    GraphCreator.prototype.selectElementContents = function(el) {
+      var range = document.createRange();
+      range.selectNodeContents(el);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    };
+
+    /* insert svg line breaks: taken from http://stackoverflow.com/questions/13241475/how-do-i-include-newlines-in-labels-in-d3-charts */
+    GraphCreator.prototype.insertTitleLinebreaks = function (gEl, title) {
+      var words = title.split(/\s+/g),
+          nwords = words.length;
+      var el = gEl.append("text")
+            .attr("text-anchor","middle")
+            .attr("dy", "-" + (nwords-1)*7.5);
+      for (var i = 0; i < words.length; i++) {
+        var tspan = el.append('tspan').text(words[i]);
+        if (i > 0)
+          tspan.attr('x', 0).attr('dy', '15');
+      }
+    };
+
+    
+    // remove edges associated with a node
+    GraphCreator.prototype.spliceLinksForNode = function(node) {
+      var thisGraph = this,
+        toSplice = thisGraph.edges.filter(function(l,i) {
+          var isSource = l.source === node, isTarget = l.target === node;
+
+          if(isSource){
+            var found = false;
+            var targetNode = l.target;
+            var nodeIdx = thisGraph.findNodeIndex(targetNode);
+            l.target.course.requirements.forEach(function(req,j){
+              if(!found && thisGraph.helper.isArray(req)){
+                req.forEach(function(r,k){
+                  if(!found && r.node.id === node.id){
+                    if(req.length === 2){
+                      var group = l.group;
+                      thisGraph.optionalGroups.splice(thisGraph.optionalGroups.indexOf(group),1);
+                      thisGraph.setGroupColors();
+                      thisGraph.nodes[nodeIdx].course.requirements[j].splice(k,1);
+                      thisGraph.nodes[nodeIdx].course.requirements[j] = thisGraph.nodes[nodeIdx].course.requirements[j][0];
+
+                      var edgeIdx = thisGraph.findEdgeIndex(thisGraph.nodes[nodeIdx].course.requirements[j].node,l.target);
+                      thisGraph.edges[edgeIdx].optional = false;
+                    }else {
+                      thisGraph.nodes[nodeIdx].course.requirements[j].splice(k,1);
+                    }
+                    found = true;
+                  }
+                });
+              }else if(!found && req.node.id === node.id){
+                thisGraph.nodes[nodeIdx].course.requirements.splice(j,1);
+                found = true;
+              }
+            })
+          }
+
+          return (isSource || isTarget);
+        });
+      toSplice.map(function(l) {
+        thisGraph.edges.splice(thisGraph.edges.indexOf(l), 1);
+      });
+    };
+
+    GraphCreator.prototype.replaceSelectEdge = function(d3Path, edgeData){
+      var thisGraph = this;
+      d3Path.classed(thisGraph.consts.selectedClass, true);
+      if (thisGraph.state.selectedEdge){
+        thisGraph.removeSelectFromEdge();
+      }
+      thisGraph.state.selectedEdge = edgeData;
+    };
+
+    GraphCreator.prototype.replaceSelectNodes = function(d3Node, nodeData){
+      var thisGraph = this;
+      if (thisGraph.state.selectedNodes.length > 0){
+        thisGraph.removeSelectFromNodes();
+      }
+      d3Node.classed(this.consts.selectedClass, true);
+      thisGraph.state.selectedNodes.push(nodeData);
+    };
+    
+    GraphCreator.prototype.removeSelectFromNodes = function(){
+      var thisGraph = this;
+      thisGraph.circles.filter(function(cd){
+        return thisGraph.state.selectedNodes.filter(function(node){
+          return cd.id === node.id
+        }).length;
+      }).classed(thisGraph.consts.selectedClass, false);
+      thisGraph.state.selectedNodes = [];
+    };
+
+    GraphCreator.prototype.removeSelectFromEdge = function(){
+      var thisGraph = this;
+      thisGraph.paths.filter(function(cd){
+        return cd === thisGraph.state.selectedEdge;
+      }).classed(thisGraph.consts.selectedClass, false);
+      thisGraph.state.selectedEdge = null;
+    };
+
+    GraphCreator.prototype.generateEdgeTooltipHtml = function(thisGraph){
+      return ('<h3>Relationship Type</h3>' +
+        '<select id="tooltip_select" style="width: 100%">'+
+          '<option value="PREREQ">Prerequisite</option>' +
+          '<option value="COREQ">May be taken concurrently</option>' +
+          '<option value="COREQ_STRICT">Must be taken concurrently</option>' +
+          '<option value="RECOMMENDED">Recommended</option>' +
+        '</select>' +
+        '<button style="width: 49%; margin-top: 5px; margin-right: 1%" id="change_edge">Enter</button>'+
+        '<button style="width: 49%; margin-top: 5px; margin-left: 1%" id="remove_tooltip">Cancel</button>'
+      );
+    }
+
+    GraphCreator.prototype.generateTooltipDiv = function(callback,css_class,targetObject,d3el){
+      var thisGraph = this;
+
+      if(thisGraph.tooltipDiv == null){
+        thisGraph.deleteForm = false;
+        if(targetObject.source){
+          if(!($("#smallipop_form").length)){
+            var left = d3.event.pageX;
+            var top = d3.event.pageY;
+
+            var div = '<div id="smallipop_form" style="position: absolute; z-index: -1; height: 1px; width: 1px; left: '+left+'px; top: '+top+'px"></div>';
+            $('body').append(div); 
+
+
+            $("#smallipop_form").smallipop({
+              triggerOnClick: true,
+              hideOnPopupClick: false,
+              hideOnTriggerClick: false,
+              onBeforeHide: function() { return thisGraph.deleteForm },
+              onAfterShow: function() {
+                $("#tooltip_select").select2();
+
+                $("#change_edge").on("click", function(d){
+                  thisGraph.updatePathType.call(thisGraph, d3.select(this), targetObject);
+                });
+
+                $("#remove_tooltip").on("click", function(d){
+                  thisGraph.removeTooltip.call(thisGraph, d3.select(this), d, targetObject);
+                });
+              },
+              onAfterHide: function() { 
+                $("#smallipop_form").remove();
+                thisGraph.tooltipDiv = null;
+             }            
+            },callback(thisGraph));
+            $("#smallipop_form").smallipop('show');
+            $('.smallipop-instance').css('max-width','250px');
+          }
+          thisGraph.tooltipEdge = d3.event.target;
+          
+        } else {
+          if(!($("#smallipop_form").length)/* && thisGraph.state.mouseDownNode === null*/){
+            var radius = thisGraph.nodeRadius;
+            var left = d3.event.pageX - radius*thisGraph.scale;
+            var top = d3.event.pageY - radius*thisGraph.scale;
+            $('body').append('<div id="smallipop_form" style="z-index: -1; width: '+Math.ceil(thisGraph.scale*2*radius)+'px; height: '+Math.ceil(thisGraph.scale*2*radius)+'px; position: absolute; left:'+left+'px; top:'+top+'px"></div>');
+            $("#smallipop_form").smallipop({ 
+              triggerOnClick: true,
+              hideOnPopupClick: false,
+              hideOnTriggerClick: false,
+              onBeforeHide: function() { return thisGraph.deleteForm },
+              onAfterShow: function() {
+                thisGraph.initializeCourseForm.call(thisGraph,d3el,targetObject);
+                $("#remove_tooltip").on("click", function(d){
+                  thisGraph.removeTooltip.call(thisGraph, d3.select(this), d, targetObject);
+                });
+              },
+              onAfterHide: function() { 
+                $("#smallipop_form").remove();
+                thisGraph.tooltipDiv = null;
+             }   
+            },callback(thisGraph));  
+            $("#smallipop_form").smallipop('show');
+            $('.smallipop-instance').css('max-width','250px');
+          }          
+        }
+
+        thisGraph.tooltipDiv = div;
+      }
+      //end change
+    }
+
+    GraphCreator.prototype.courseSubjectCodes = function() {
+      var select_html = '';
+      var first = false;
+
+      for(var subj_code in course_data){
+        select_html += '<option value="'+subj_code+'" '+(first ? 'selected' : '')+'>'+subj_code+'</option>';
+
+        if(first)
+          first = false;
+      }
+
+      return select_html;
+    }
+
+    GraphCreator.prototype.generateNodeFormHtml = function(thisGraph){
+      return (
+        '<h3>Course Subject Code</h3>' +
+        '<select id="course_subj_code_select" style="width: 100%">'+
+          '<option></option>'+
+          thisGraph.courseSubjectCodes() +
+        '</select>' +
+        '<h3>Course Number</h3>' +
+        '<select id="course_num_select" style="width: 100%">'+
+        '</select>' +
+        '<button style="margin-top: 5px; width: 100%" id="change_requirements">Set Prerequisites</button>'+
+        '<button style="width: 49%; margin-top: 5px; margin-right: 1%" id="change_course">Enter</button>'+
+        '<button style="width: 49%; margin-left: 1%; margin-top: 5px" id="remove_tooltip">Cancel</button>'
+      );
+    }
+
+    GraphCreator.prototype.removeTooltip = function(d3path, d, targetObject) {
+      var thisGraph = this;
+
+      if(thisGraph.prereqContainer.prereqs.length > 0){
+        if(window.confirm('All prerequisite data will be lost if you do not save.  Close anyways?')){
+          thisGraph.clearPrereqContianer();
+          thisGraph.deleteForm = true;
+          $("#smallipop_form").smallipop('hide');
+          $("#smallipop_form").remove();
+        }else
+          return false;
+      } else {
+        thisGraph.deleteForm = true;
+        $("#smallipop_form").smallipop('hide');
+        $('#smallipop_form').remove();
+
+        if(targetObject.course && targetObject.course.course_subj_code === null){
+          thisGraph.nodes.splice(thisGraph.findNodeIndex(targetObject),1);
+          thisGraph.updateGraph();
+        }
+      }
+
+      thisGraph.tooltipDiv = null;
+      thisGraph.tooltipEdge = null;
+      thisGraph.tooltipNode = null;
+    }
+
+    GraphCreator.prototype.updateCourseNumSelect = function(d3path, d, id) {
+      var thisGraph = this,
+        options_str = '<option></option>',
+        id_concat = (id !== undefined) ? ('_'+id) : '',
+        subj_code = $("#course_subj_code_select"+id_concat).val(),
+        new_options = course_data[subj_code];
+
+      //Clear old options
+      $("#course_num_select"+id_concat).html('');
+
+      //Add new options
+      for(var course_num in new_options){
+        options_str += '<option value="'+course_num+'">'+course_num+': '+new_options[course_num]["ctitle"]+'</option>';
+      }
+
+      $("#course_num_select"+id_concat).html(options_str);
+      $("#course_num_select"+id_concat).change();
+    }
+
+    GraphCreator.prototype.updateNodeCourse = function(d3node, d) {
+      var thisGraph = this, idx;      
+      var course_subj_code = $("#course_subj_code_select").val(),
+        course_num = $("#course_num_select").val(),
+        ctitle = course_data[course_subj_code][course_num]['ctitle'];
+
+      //Find node to be updated
+      for(idx = 0; idx < thisGraph.nodes.length; idx++) {
+        if(thisGraph.nodes[idx].id === d.id)
+          break;
+      }
+
+      //If new prereqs were saved, update prereqs
+      if(thisGraph.prereqContainer.node && thisGraph.isValidPrereqs(course_subj_code,course_num)){
+        thisGraph.setPrerequisites.call(thisGraph);
+      } else if(thisGraph.prereqContainer.node && !thisGraph.isValidPrereqs(course_subj_code,course_num))
+        return false;
+
+      //Update node with new course info
+      thisGraph.nodes[idx].updateCourseInfo(course_subj_code,course_num,ctitle);
+
+      d3node.selectAll('text').remove();
+      d3node.title = thisGraph.nodes[idx].title;
+      thisGraph.insertTitleLinebreaks(d3node, thisGraph.nodes[idx].title);
+
+      //Remove tooltip
+      thisGraph.tooltipDiv = null;
+      thisGraph.tooltipNode = null;
+      thisGraph.deleteForm = true;
+      $("#smallipop_form").smallipop('hide');
+      $("#smallipop_form").remove();
+
+      return true;
+    }
+
+
+    GraphCreator.prototype.isValidPrereqs = function(course_subj_code,course_num) {
+      var thisGraph = this;
+
+      for(var i in thisGraph.prereqContainer.prereqs)
+        for(var j in thisGraph.prereqContainer.prereqs[i]){
+          var thisPrereq = thisGraph.prereqContainer.prereqs[i][j];
+          if(course_subj_code === thisPrereq.course_subj_code && course_num === thisPrereq.course_num){
+            alert('A course cannot be a prerequisite for itself');
+            return false;
+          }
+        }
+
+      return true;
+    }
+
+    GraphCreator.prototype.parseClasses = function(c) {
+      for(var i in c)
+        if(c[i] == "PREREQ" || c[i] == "COREQ" || c[i] == "COREQ_STRICT" || c[i] == "RECOMMENDED")
+          return c[i];
+
+      return null;
+    }
+
+    GraphCreator.prototype.updatePathType = function(d3path, d) {
+      var thisGraph = this;
+      var classHash = {};
+      var idx;
+      var newType = $("#tooltip_select").val();
+
+      //Change css class
+      classHash[thisGraph.parseClasses(d3.select(thisGraph.tooltipEdge).attr("class").split(' '))] = false;
+      classHash[newType] = true;
+      d3.select(thisGraph.tooltipEdge).classed(classHash);
+
+      //Find correct Edge object
+      for(idx = 0; idx < thisGraph.edges.length;idx++){
+        if(thisGraph.edges[idx].source === d.source && thisGraph.edges[idx].target === d.target)
+          break;
+      }
+
+      //Update prerequisite type
+      thisGraph.edges[idx].type = RelationshipType[newType];
+      thisGraph.updateCourseRequirements(idx,RelationshipType[newType]);
+
+      $("#smallipop_form").smallipop('hide');
+      $("#smallipop_form").remove();
+      thisGraph.tooltipDiv = null;
+      thisGraph.tooltipEdge = null;
+    }
+
+    GraphCreator.prototype.updateCourseRequirements = function(idx,reqType,groupLength) {
+      var thisGraph = this;
+
+      thisGraph.edges[idx].target.course.requirements.forEach(function(req,i){
+        if(thisGraph.helper.isArray(req)){
+          req.forEach(function(r,j){ 
+            if(r.node === thisGraph.edges[idx].source)
+              thisGraph.edges[idx].target.course.requirements[i][j].requirement_type = reqType;
+          });
+        }else if(req.node === thisGraph.edges[idx].source) {
+          thisGraph.edges[idx].target.course.requirements[i].requirement_type = reqType;
+        }
+      })
+    }
+
+    GraphCreator.prototype.pathMouseDown = function(d3path, d){
+      var thisGraph = this,
+          state = thisGraph.state,
+          edge = d;
+      d3.event.stopPropagation();
+      state.mouseDownLink = d;
+
+      if(d3.event.shiftKey){
+        thisGraph.generateTooltipDiv(thisGraph.generateEdgeTooltipHtml, "tooltip", d,d3path);
+      }
+
+      if (state.selectedNode.length > 0){
+        thisGraph.removeSelectFromNodes();
+      }
+      
+      var prevEdge = state.selectedEdge;  
+      if (!prevEdge || prevEdge !== d){
+        thisGraph.replaceSelectEdge(d3path, d);
+      } else{
+        thisGraph.removeSelectFromEdge();
+      }
+    };
+
+    // mousedown on node
+    GraphCreator.prototype.circleMouseDown = function(d3node, d){
+      var thisGraph = this,
+          state = thisGraph.state;
+      d3.event.stopPropagation();
+      state.mouseDownNode = d;
+      if (d3.event.shiftKey){
+        state.shiftNodeDrag = d3.event.shiftKey;
+        // reposition dragged directed edge
+        thisGraph.dragLine.classed('hidden', false)
+          .attr('d', 'M' + d.x + ',' + d.y + 'L' + d.x + ',' + d.y);
+        return;
+      }
+    };
+
+    GraphCreator.prototype.findSpaceForNode = function(node, leftNodes) {
+      var thisGraph = this, radius = thisGraph.nodeRadius;
+      var start_x = node.x - 3*radius,
+        start_y = node.y,
+        max_y = window.innerHeight,
+        max_x = window.innerWidth,
+        valid_placement = true,
+        next_y = start_y;
+
+      if(start_x < 0){
+        start_x = radius;
+      }
+
+      for(var x=start_x; x >= radius;x -= radius){
+        for(var y=start_y,i=0; (y >= radius && y <= max_y - radius) || (next_y >= radius && next_y <= max_y - radius); y=start_y + radius*Math.floor((i+2)/2)*Math.pow(-1,i), i++){
+          if(y >= radius && y <= max_y - radius){
+            valid_placement = true;
+            for(var j = 0;j < leftNodes.length;j++){
+              var d = leftNodes[j];
+              if(Math.sqrt((d.x - x)*(d.x - x) + (d.y - y)*(d.y - y)) < 3*radius){
+                valid_placement = false;
+                break;
+              }
+            }
+            if(valid_placement){
+              return [x,y];
+            }
+          }
+          next_y = start_y + radius*Math.floor((i+3)/2)*Math.pow(-1,i+1);
+        }
+      }
+
+      //No valid spot found, place near target node
+      if(start_y >= 3*radius)
+        return [node.x,node.y - 2*radius];
+      else
+        return [node.x,node.y + 2*radius];
+
+    }
+
+    GraphCreator.prototype.setPrereqContainer = function(node,prereqs){
+      this.prereqContainer.node = node;
+      this.prereqContainer.prereqs = prereqs;
+    }
+
+    GraphCreator.prototype.clearPrereqContianer = function(){
+      this.prereqContainer.node = null;
+      this.prereqContainer.prereqs = [];
+    }
+
+
+    GraphCreator.prototype.removeEdges = function() {
+      var thisGraph = this,
+        node = thisGraph.prereqContainer.node,
+        prereqs = thisGraph.prereqContainer.prereqs,
+        idx = thisGraph.findNodeIndex(node),
+        current_prereqs = node.course.requirements,
+        removedEdges = [];
+
+      current_prereqs.forEach(function(req,reqIdx){
+        var found = false;
+        if(thisGraph.helper.isArray(req)){
+          req.forEach(function(r,rIdx){
+            found = false;
+
+            for(var i in prereqs){
+              for(var j in prereqs[i])
+                if(r.node.course.isSameCourse(prereqs[i][j].course_subj_code,prereqs[i][j].course_num)){
+                  found = true;
+                  break;
+                }
+              if(found) break;
+            }
+            if(!found){
+              thisGraph.edges.splice(thisGraph.findEdgeIndex(r.node,node),1);
+              thisGraph.nodes[idx].course.requirements[reqIdx].splice(rIdx,1);
+            }
+          });
+        }else {
+          for(var i in prereqs){
+            for(var j in prereqs[i])    
+              if(req.node.course.isSameCourse(prereqs[i][j].course_subj_code,prereqs[i][j].course_num)){
+                found = true;
+                break;
+              }
+            if(found) break;      
+          }
+          if(!found){
+            thisGraph.edges.splice(thisGraph.findEdgeIndex(req.node,node),1);
+            thisGraph.nodes[idx].course.requirements.splice(reqIdx,1);
+          }
+        }
+      });
+    
+      thisGraph.updateGraph();
+    }
+
+    GraphCreator.prototype.setPrerequisites = function() {
+      var thisGraph = this,
+        node = thisGraph.prereqContainer.node,
+        prereqs = thisGraph.prereqContainer.prereqs,
+        idx = thisGraph.findNodeIndex(node),
+        optionGroup = [], currentNode,
+        group, prereqIdx = 0;
+
+
+      thisGraph.removeEdges();
+      //Get all nodes to the left of the node
+      var leftNodes = thisGraph.nodes.filter(function(d){ return d.x <= node.x });
+      prereqs.forEach(function(prereq_list, listIdx){
+        optionGroup = [];
+        group = null;
+        if(prereq_list.length !== 0){
+          prereq_list.forEach(function(prereq, optIdx){
+            var course_found = false;
+            for(var i in thisGraph.nodes){
+              currentNode = thisGraph.nodes[i];
+              if(currentNode.course.isSameCourse(prereq.course_subj_code,prereq.course_num)){
+                course_found = true;
+                var edgeIndex = thisGraph.findEdgeIndex(currentNode,node);
+
+                //An edge between these nodes already exists
+                if(edgeIndex !== -1){
+                  thisGraph.edges[edgeIndex].type = prereq.requirement_type;
+                  optionGroup.push(thisGraph.edges[edgeIndex]);
+
+                  if(optIdx === 0) 
+                    group = thisGraph.edges[edgeIndex].group;
+
+                  thisGraph.updateCourseRequirements(edgeIndex,prereq.requirement_type,prereq_list.length);
+                  thisGraph.updateGraph();
+                }else {
+                  //Source node already exists, create new edge
+                  var thisEdge = thisGraph.createEdge(currentNode,node,prereq.requirement_type,group);
+                  optionGroup.push(thisEdge);
+
+                  if(optIdx === 0) 
+                    group = thisEdge.group;
+
+                  thisGraph.addNewPrereq(idx,currentNode,prereq.requirement_type,prereq_list,prereqIdx,optIdx);
+                }
+                break;
+              }
+            }
+            if(!course_found){
+              var coords = thisGraph.findSpaceForNode(node, leftNodes);
+              var d = new Node(thisGraph.idct++,coords[0],coords[1],prereq);
+              thisGraph.addNewPrereq(idx,d,prereq.requirement_type,prereq_list,prereqIdx,optIdx);
+
+              //Add this to the list of nodes we need to avoid when placing new nodes
+              leftNodes.push(d);
+              thisGraph.nodes.push(d);
+              thisGraph.updateGraph();
+
+              //Add new edge
+              var thisEdge = thisGraph.createEdge(d,node,prereq.requirement_type, group);
+              optionGroup.push(thisEdge);
+              if(optIdx === 0){ 
+                group = thisEdge.group;
+              }
+            }
+          })
+        prereqIdx++;
+        }
+        if(optionGroup.length > 1) thisGraph.setEdgeGroup(optionGroup, node);
+      })
+
+      thisGraph.updateGraph();
+      thisGraph.clearPrereqContianer();
+    }
+
+    GraphCreator.prototype.setEdgeGroup = function(optionGroup,target) {
+      var group, thisGraph = this;
+
+      optionGroup.forEach(function(edge,i){
+        var edgeIndex = thisGraph.findEdgeIndex(edge.source,edge.target);
+
+        if(i === 0){
+          group = edge.group;
+        } else 
+          thisGraph.edges[edgeIndex].group = group;
+
+        thisGraph.edges[edgeIndex].optional = true;
+      });
+
+      thisGraph.optionalGroups.push(group);
+    }
+
+    GraphCreator.prototype.removeOldGroups = function(){
+      var thisGraph = this, numGroups = thisGraph.optionalGroups.length, idx = -1,
+        removeGroups = [], removeGroupIndices = [];
+
+      for(var i = 0; i < numGroups; i++){
+        var groupEdges = [];
+        idx = -1;
+        thisGraph.edges.forEach(function(d, j){ 
+          idx = j;
+          if(d.group == thisGraph.optionalGroups[i])
+            groupEdges.push(d);
+        });
+
+        if(groupEdges.length <= 1){
+          removeGroups.push(i);
+          removeGroupIndices.push(idx);
+        }
+      }
+      for(var i = 0;i < removeGroups.length;i++){
+        thisGraph.optionalGroups.splice(removeGroups[i]);
+        if(removeGroupIndices[i] !== -1)
+          thisGraph.edges[removeGroupIndices[i]].optional = false;
+      }
+    }
+
+    GraphCreator.prototype.setGroupColors = function() {
+      var thisGraph = this;
+      var  numGroups = parseInt(thisGraph.optionalGroups.length.toString(16).toUpperCase(),16),
+        groupColors = [], correction = numGroups === 0x1 ? 0x0 : 0x1;
+
+      for(var i = 0x0; i < numGroups;i++){
+        var decRed = 0xFF - Math.floor((i / (numGroups - correction))*0xFF);
+        var decGreen = Math.floor((i / (numGroups - correction))*0xFF);
+
+        var padRed = decRed > 15 ? '' : '0',
+          padGreen = decGreen > 15 ? '' : '0';
+
+        var colorHex = '#' + padRed + decRed.toString(16).toUpperCase() + padGreen + decGreen.toString(16).toUpperCase() + '00';
+        groupColors.push(colorHex)
+      }
+      thisGraph.colorScale = groupColors;
+
+    }
+
+    GraphCreator.prototype.addNewPrereq = function(idx, prereqNode,reqType,prereq_list,listIdx,optIdx) {
+      var thisGraph = this;
+      var newPrereq = {node: prereqNode, requirement_type: reqType};
+
+      //Build list of prereqs for this course
+      if(prereq_list.length > 1 && optIdx === 0)
+        thisGraph.nodes[idx].course.requirements[listIdx] = [newPrereq];
+      else if(prereq_list.length > 1){
+        try { thisGraph.nodes[idx].course.requirements[listIdx].push(newPrereq) }
+        catch(e){
+          thisGraph.nodes[idx].course.requirements[listIdx] = [thisGraph.nodes[idx].course.requirements[listIdx],newPrereq];
+        }
+      }
+      else
+        thisGraph.nodes[idx].course.requirements[listIdx] = newPrereq;
+    }
+
+    GraphCreator.prototype.findNodeIndex = function(d) {
+      var thisGraph = this;
+
+      for(var idx = 0; idx < thisGraph.nodes.length;idx++)
+        if(d.id === thisGraph.nodes[idx].id)
+          return idx;
+
+      //Node not found
+      return -1;      
+    }
+
+    GraphCreator.prototype.createEdge = function(source,target,relType,group) {
+      var thisGraph = this,
+        group = (group === undefined || group === null ) ? thisGraph.edgeGrp++ : group
+      var newEdge = new Edge(source, target, relType, group);
+
+      var filtRes = thisGraph.paths.filter(function(d){
+        if (d.source === newEdge.target && d.target === newEdge.source){
+          thisGraph.edges.splice(thisGraph.edges.indexOf(d), 1);
+        }
+        return d.source === newEdge.source && d.target === newEdge.target;
+      });
+      //There is not already an edge between these nodes
+      if (!filtRes[0].length){
+        thisGraph.edges.push(newEdge);
+        thisGraph.updateGraph();
+        return thisGraph.edges[thisGraph.edges.length - 1]
+      } 
+      //An edge already exists between these nodes
+      return thisGraph.edges[thisGraph.findEdgeIndex(source,target)];     
+    }
+
+    GraphCreator.prototype.findEdgeIndex = function(source,target) {
+      var thisGraph = this;
+
+      for(var i in thisGraph.edges){
+        var thisEdge = thisGraph.edges[i];
+        if(thisEdge.source === source && thisEdge.target === target)
+          return i;
+      }
+
+      //Edge not found
+      return -1;
+    }
+
+    GraphCreator.prototype.initializeCourseForm = function(d3node,d) {
+        var thisGraph = this,
+          node = d;
+
+     //Register handlers
+      $("#course_subj_code_select").on("change", function(d){
+        thisGraph.updateCourseNumSelect.call(thisGraph, d3.select(this), node);
+      })
+
+      $("#change_course").on("click", function(d){
+        var courseUpdated = thisGraph.updateNodeCourse.call(thisGraph, d3node, node); 
+
+        return courseUpdated;
+      }) 
+
+      $("#change_requirements").on("click", function(d){
+        thisGraph.prereqForm = new PrereqForm(thisGraph.setPrereqContainer, thisGraph, node, d3node);
+        $(".smallipop-instance").css('z-index', '1');
+        thisGraph.prereqForm.setCourseRequirements();
+      })
+
+      $("#course_subj_code_select").select2({ width: 'style', placeholder: 'Subject Code'});
+      $("#course_num_select").select2({ width: 'style', placeholder: 'Course Number' });
+
+      //thisGraph.tooltipNode = d3.event.target;
+
+      if(d.course.course_subj_code !== null){
+        $("#course_subj_code_select").val(d.course.course_subj_code);
+        $("#course_subj_code_select").change();
+        $("#course_num_select").val(d.course.course_num.toString());
+        $("#course_num_select").change();
+      }else
+        thisGraph.updateCourseNumSelect.call(thisGraph);
+    }
+
+    GraphCreator.prototype.createCourseSelect = function(d3node, d) {
+      var thisGraph = this,
+        node = d;
+      thisGraph.generateTooltipDiv(thisGraph.generateNodeFormHtml, "courseTooltip", d,d3node);
+     
+     thisGraph.initializeCourseForm(d3node,d);
+    }
+
+
+    GraphCreator.prototype.nodeInfo = function(d) {
+      var thisGraph = this;
+
+      return (
+        '<h3>'+d.title+': '+d.course.ctitle+'</h3>' +
+        '<p style="text-align: left"><strong>Past Course Offerings</strong>: '+
+        '<br>' +
+        thisGraph.courseHistory(d) +
+        '</p>' +
+        '<p style="text-align: left"><strong>Prerequisites</strong>: '+
+        thisGraph.courseRequirements(d) +
+        '</p>'
+      )
+    }
+
+    GraphCreator.prototype.courseHistory = function(d) {
+      var thisGraph = this,
+        history = {offerings: {'fall': 0, 'winter': 0,'spring': 0,'summer': 0},
+         size: {'fall': 0, 'winter': 0,'spring': 0,'summer': 0}},
+        summerYears = [],
+        course_terms = course_data[d.course.course_subj_code][d.course.course_num].terms_offered;
+
+        for(var key in course_terms){
+          var keyNum = parseInt(key);
+
+
+          if(key >= "201103"){
+            switch (keyNum % 10) {
+              case 0:
+                history.offerings['fall']++;
+                history.size['fall'] += course_terms[key];
+                break;
+              case 1:
+                history.offerings['winter']++;
+                history.size['winter'] += course_terms[key];
+                break;
+              case 3:
+                history.offerings['spring']++;
+                history.size['spring'] += course_terms[key];
+                break;
+              default:
+                if(summerYears.indexOf(key.substr(0,4)) === -1){
+                  history.offerings['summer']++;
+                  summerYears.push(key.substr(0,4))
+                }
+                history.size['summer'] += course_terms[key];
+                break;
+            }
+          }
+        }
+
+        return (
+          history.offerings['fall'] + " of the last 4 falls (Avg. Enrollment: " + Math.round(history.size['fall'] / history.offerings['fall']) + ")<br>" +
+          history.offerings['winter'] + " of the last 4 winters (Avg. Enrollment: " + Math.round(history.size['winter'] / history.offerings['winter']) + ")<br>" +
+          history.offerings['spring'] + " of the last 4 springs (Avg. Enrollment: " + Math.round(history.size['spring'] / history.offerings['spring']) + ")<br>" +
+          history.offerings['summer'] + " of the last 4 summers (Avg. Enrollment: " + Math.round(history.size['summer'] / history.offerings['summer']) + ")<br>"
+        );
+    }
+
+    GraphCreator.prototype.courseRequirements = function(d) {
+      var thisGraph = this,
+        reqString = '';
+
+      d.course.requirements.forEach(function(req,i){
+        if(thisGraph.helper.isArray(req)){
+          req.forEach(function(r,j){
+            reqString += r.node.title;
+
+            switch (r.requirement_type) {
+              case RelationshipType.COREQ:
+                reqString += ' (may be taken concurrently)';
+                break;
+              case RelationshipType.COREQ_STRICT:
+                reqString += ' (must be taken concurrently)';
+                break;
+            }
+
+            if(j !== req.length - 1) 
+              reqString += ' or ';
+            else if(i !== d.course.requirements.length - 1)
+              reqString += ', ';
+          })
+        }else{
+          reqString += req.node.title;
+
+          switch (req.requirement_type) {
+            case RelationshipType.COREQ:
+              reqString += ' (may be taken concurrently)';
+              break;
+            case RelationshipType.COREQ_STRICT:
+              reqString += ' (must be taken concurrently)';
+              break;
+          }
+
+          if(i !== d.course.requirements.length - 1)
+            reqString += ', ';
+        }
+      })
+
+      return reqString === '' ? 'None' : reqString;
+    }
+
+    // mouseup on nodes
+    GraphCreator.prototype.circleMouseUp = function(d3node, d){
+      var thisGraph = this,
+          state = thisGraph.state,
+          consts = thisGraph.consts;
+      // reset the states
+      state.shiftNodeDrag = false;    
+      d3node.classed(consts.connectClass, false);
+      
+      var mouseDownNode = state.mouseDownNode;
+
+      if (!mouseDownNode) return;
+
+      thisGraph.dragLine.classed("hidden", true);
+
+      if (mouseDownNode !== d){
+        //Don't continue if there is already an edge between these nodes
+        if(thisGraph.findEdgeIndex(mouseDownNode,d) > -1 || thisGraph.findEdgeIndex(d,mouseDownNode) > -1){
+          state.mouseDownNode = null;
+          return;
+        }
+
+        // we're in a different node: create new edge for mousedown edge and add to graph
+        thisGraph.createEdge(mouseDownNode,d,RelationshipType.PREREQ);
+        var newPrereq = {node: mouseDownNode, requirement_type: RelationshipType.PREREQ},
+          nodeIdx = thisGraph.findNodeIndex(d);
+
+        thisGraph.nodes[nodeIdx].course.requirements.push(newPrereq);
+      } else{
+        // we're in the same node
+        if (state.justDragged) {
+          // dragged, not clicked
+          state.justDragged = false;
+        } else{
+          // clicked, not dragged
+          if (d3.event.shiftKey){
+            // shift-clicked node: edit node info
+            thisGraph.createCourseSelect.call(thisGraph,d3node,d);
+          } else{
+            if (state.selectedEdge){
+              thisGraph.removeSelectFromEdge();
+            }
+            var prevNodes = state.selectedNodes;            
+            
+            if ((!prevNodes.length || 
+                !prevNodes.filter(function(prevNode){ return prevNode.id === d.id }).length)
+                && !d3.event.ctrlKey
+            ){
+              thisGraph.replaceSelectNodes(d3node, d);
+            } else if((!prevNodes.length || 
+                !prevNodes.filter(function(prevNode){ return prevNode.id === d.id }).length)
+                && d3.event.ctrlKey)
+            {
+              d3node.classed(this.consts.selectedClass, true);
+              thisGraph.state.selectedNodes.push(d);
+            } else if(prevNodes.filter(function(prevNode){ return prevNode.id === d.id }).length && d3.event.ctrlKey){
+                thisGraph.circles.filter(function(cd) { return cd.id === d.id }).classed(thisGraph.consts.selectedClass, false);
+                thisGraph.state.selectedNodes.splice(thisGraph.state.selectedNodes.indexOf(d),1);
+            }
+          }
+        }
+      }
+      state.mouseDownNode = null;
+      return;
+      
+    }; // end of circles mouseup
+
+    // mousedown on main svg
+    GraphCreator.prototype.svgMouseDown = function(svg,eThis){
+      var thisGraph = this;
+
+      thisGraph.state.graphMouseDown = true;
+      d3.selectAll('g.selected').classed("selected", false);
+      thisGraph.state.selectedNodes = [];
+
+      if(d3.event.shiftKey){
+        thisGraph.state.draggableSelection = true;
+        var p = d3.mouse(eThis);
+
+        svg.append("rect")
+        .attr({
+            rx      : 6,
+            ry      : 6,
+            class   : "selection",
+            x       : p[0],
+            y       : p[1],
+            width   : 0,
+            height  : 0
+        })
+      }
+    };
+
+    GraphCreator.prototype.svgMouseMove = function(svg,eThis){
+      var thisGraph = this;
+      var s = svg.select("rect.selection");
+
+      if(!s.empty() && thisGraph.state.draggableSelection) {
+        thisGraph.state.selectionDragged = true;
+        var p = d3.mouse(eThis),
+          d = {
+            x       : parseInt(s.attr("x"), 10),
+            y       : parseInt(s.attr("y"), 10),
+            width   : parseInt(s.attr("width"), 10),
+            height  : parseInt(s.attr("height"), 10)
+          },
+          move = {
+            x : p[0] - d.x,
+            y : p[1] - d.y
+          }
+        ;
+
+        if(move.x < 1 || (move.x*2<d.width)) {
+          d.x = p[0];
+          d.width -= move.x;
+        } else {
+          d.width = move.x;       
+        }
+
+        if(move.y < 1 || (move.y*2<d.height)) {
+          d.y = p[1];
+          d.height -= move.y;
+        } else {
+          d.height = move.y;       
+        }
+         
+        s.attr(d);
+
+        //deselect all temporary selected state objects
+        d3.selectAll('g.conceptG.selection.selected').classed("selected", false);
+        thisGraph.state.selectedNodes = [];
+
+        var radius = thisGraph.nodeRadius,
+          dx = (d.x - thisGraph.translate[0]) / thisGraph.scale,
+          dy = (d.y  - thisGraph.translate[1]) / thisGraph.scale,
+          dWidth = d.width / thisGraph.scale,
+          dHeight = d.height / thisGraph.scale;
+
+        svg.selectAll('g.conceptG circle').each(function(node, i) {
+          if( 
+            !d3.select(this).classed("selected") && 
+            node.x - radius >= dx && node.x + radius <= dx + dWidth && 
+            node.y - radius >= dy && node.y + radius <= dy + dHeight
+          ) {
+            d3.select(this.parentNode)
+              .classed("selection", true)
+              .classed("selected", true);
+            thisGraph.state.selectedNodes.push(node);
+          }
+        });
+      } else
+        s.remove();
+    }
+
+    // mouseup on main svg
+    GraphCreator.prototype.svgMouseUp = function(svg,eThis){
+      var thisGraph = this,
+          state = thisGraph.state;
+
+      // remove selection frame
+      svg.selectAll("rect.selection").remove();
+
+      // remove temporary selection marker class
+      d3.selectAll('g.conceptG.selection').classed("selection", false);
+
+      if (state.justScaleTransGraph) {
+        // dragged not clicked
+        state.justScaleTransGraph = false;
+      } else if (state.graphMouseDown && d3.event.shiftKey && !thisGraph.state.selectionDragged){
+        // clicked not dragged from svg
+        var xycoords = d3.mouse(thisGraph.svgG.node()),
+            d = new Node(thisGraph.idct++, xycoords[0], xycoords[1], {});
+        thisGraph.nodes.push(d);
+        thisGraph.updateGraph();
+        thisGraph.createCourseSelect(thisGraph.circles.filter(function(dval){return dval.id == d.id}),d);
+      } else if (state.shiftNodeDrag){
+        // dragged from node
+        state.shiftNodeDrag = false;
+        thisGraph.dragLine.classed("hidden", true);
+      }
+      state.graphMouseDown = false;
+      state.draggableSelection = false;
+      state.selectionDragged = false;
+    };
+
+    // keydown on main svg
+    GraphCreator.prototype.svgKeyDown = function() {
+      var thisGraph = this,
+          state = thisGraph.state,
+          consts = thisGraph.consts;
+      // make sure repeated key presses don't register for each keydown
+      if(state.lastKeyDown !== -1) return;
+
+      state.lastKeyDown = d3.event.keyCode;
+      var selectedNodes = state.selectedNodes,
+          selectedEdge = state.selectedEdge;
+
+      switch(d3.event.keyCode) {
+      case consts.SHIFT_KEY:
+        d3.select('body').style('cursor','pointer');
+        break;
+      case consts.BACKSPACE_KEY:
+        break;
+      case consts.DELETE_KEY:
+        d3.event.preventDefault();
+        if (selectedNodes.length && window.confirm('Are you sure you want to delete the selected courses?')){
+          selectedNodes.forEach(function(selectedNode){
+            thisGraph.nodes.splice(thisGraph.nodes.indexOf(selectedNode), 1);
+            thisGraph.spliceLinksForNode(selectedNode);
+          });
+
+          state.selectedNodes = [];
+          thisGraph.updateGraph();
+        } else if (selectedEdge){
+          thisGraph.edges.splice(thisGraph.edges.indexOf(selectedEdge), 1);
+          state.selectedEdge = null;
+          thisGraph.updateGraph();
+        }
+        break;
+      }
+    };
+
+    GraphCreator.prototype.svgKeyUp = function() {
+      this.state.lastKeyDown = -1;
+      d3.select('body').style('cursor','auto');
+    };
+
+    // call to propagate changes to graph
+    GraphCreator.prototype.updateGraph = function(){
+      
+      var thisGraph = this, 
+          consts = thisGraph.consts,
+          state = thisGraph.state;
+      
+
+      thisGraph.removeOldGroups();
+      thisGraph.setGroupColors();
+
+      thisGraph.paths = thisGraph.paths.data(thisGraph.edges, function(d){
+        return String(d.source.id) + "+" + String(d.target.id);
+      });
+      var paths = thisGraph.paths;
+      // update existing paths
+      paths.style('marker-end', 'url(#end-arrow)')
+        //.style('marker-start', 'url(#start-arrow)')
+        .classed(consts.selectedClass, function(d){
+          return d === state.selectedEdge;
+        })
+        .classed("PREREQ", function(d){ return d.type === RelationshipType.PREREQ })
+        .classed("COREQ", function(d) { return d.type === RelationshipType.COREQ})
+        .classed("COREQ_STRICT", function(d){ return d.type === RelationshipType.COREQ_STRICT})
+        .classed("RECOMMENDED", function(d){ return d.type === RelationshipType.RECOMMENDED})
+        .classed("optional", function(d){ return d.optional })
+        .style('stroke', function(d){
+          return d.optional ? thisGraph.colorScale[thisGraph.optionalGroups.indexOf(d.group)] : '#333';
+        })
+        .attr("d", function(d){
+          return "M" + d.source.x + "," + d.source.y + "L" + d.target.x + "," + d.target.y;
+        });
+
+      // add new paths
+      paths.enter()
+        .append("path")
+        .style('marker-end','url(#end-arrow)')
+        //.style('marker-start', 'url(#start-arrow)')
+        .classed("PREREQ", function(d){ return d.type === RelationshipType.PREREQ })
+        .classed("COREQ", function(d) { return d.type === RelationshipType.COREQ})
+        .classed("COREQ_STRICT", function(d){ return d.type === RelationshipType.COREQ_STRICT})
+        .classed("RECOMMENDED", function(d){ return d.type === RelationshipType.RECOMMENDED})
+        .classed("optional", function(d){ return d.optional })
+        .attr("d", function(d){
+          return "M" + d.source.x + "," + d.source.y + "L" + d.target.x + "," + d.target.y;
+        })
+        .on("mousedown", function(d){
+          thisGraph.pathMouseDown.call(thisGraph, d3.select(this), d);
+          }
+        )
+        .on("mouseup", function(d){
+          state.mouseDownLink = null;
+        });
+
+      paths.style('stroke', function(d){
+          return d.optional ? thisGraph.colorScale[thisGraph.optionalGroups.indexOf(d.group)] : '#333';
+        })
+
+      paths.attr("id", function(d){
+        return "path_"+d.source.id+"_"+d.target.id;
+      });
+
+      // remove old links
+      paths.exit().remove();
+      
+      // update existing nodes
+      thisGraph.circles = thisGraph.circles.data(thisGraph.nodes, function(d){ return d.id;});
+      thisGraph.circles.attr("transform", function(d){return "translate(" + d.x + "," + d.y + ")";})
+      thisGraph.svgG.selectAll('circle').attr("r", thisGraph.nodeRadius);
+      thisGraph.svg.select('defs #end-arrow').attr('refX', 32 - (50 - thisGraph.nodeRadius)/2);
+      thisGraph.svg.select('defs #recommended-start-arrow').attr('refX', -29 + (50 - thisGraph.nodeRadius)/2);
+      thisGraph.svg.select('defs #coreq-start-arrow').attr('refX', -33 + (50 - thisGraph.nodeRadius)/2);
+      thisGraph.svg.select('defs #strict-coreq-start-arrow').attr('refX', -33 + (50 - thisGraph.nodeRadius)/2);
+
+      // add new nodes
+      var newGs= thisGraph.circles.enter()
+            .append("g");
+
+      newGs.classed(consts.circleGClass, true)
+        .attr("transform", function(d){return "translate(" + d.x + "," + d.y + ")";})
+        .attr("id",function(d){ return "node"+d.id})
+        .on("mouseover", function(d){     
+          if(!($("#smallipop_form").length) && !($("#node"+d.id+"div").length) && thisGraph.state.mouseDownNode === null){
+            var radius = thisGraph.nodeRadius,
+              top = d3.event.pageY - radius*thisGraph.scale,
+              left = d3.event.pageX - radius*thisGraph.scale,
+              divSize = Math.ceil(2*radius*thisGraph.scale);
+
+            $('body').append('<div id="node'+d.id+'div" style="z-index: -1; width: '+divSize+'px; height: '+divSize+'px; position: absolute; left:'+left+'px; top:'+top+'px"></div>');
+            $("#node"+d.id+"div").smallipop({},thisGraph.nodeInfo(d));  
+          } 
+
+          if(!($("#smallipop_form").length) && $("#node"+d.id+"div").length){
+            $("#node"+d.id+"div").smallipop('show'); 
+            $('.smallipop-instance').css('max-width','400px');
+          }
+
+          if (state.shiftNodeDrag){
+            d3.select(this).classed(consts.connectClass, true);
+          }
+        })
+        .on("mouseout", function(d){
+
+          if($("#node"+d.id+"div").length){
+            $("#node"+d.id+"div").smallipop('hide');  
+            $("#node"+d.id+"div").remove();
+          }
+
+          d3.select(this).classed(consts.connectClass, false);
+        })
+        .on("mousedown", function(d){
+          if($("#node"+d.id+"div").length){
+            $("#node"+d.id+"div").smallipop('hide');  
+            $("#node"+d.id+"div").remove();
+          }
+          thisGraph.circleMouseDown.call(thisGraph, d3.select(this), d);
+        })
+        .on("mouseup", function(d){
+          thisGraph.circleMouseUp.call(thisGraph, d3.select(this), d);
+        })
+        .call(thisGraph.drag);
+
+      newGs.append("circle")
+        .attr("r", String(thisGraph.nodeRadius));
+
+      newGs.each(function(d){
+        thisGraph.insertTitleLinebreaks(d3.select(this), d.title);
+      });
+
+      // remove old nodes
+      thisGraph.circles.exit().remove();
+    };
+
+    GraphCreator.prototype.updateDividers = function(x,y){
+      var thisGraph = this, divisionWidth = x / 4;
+
+      for(var i = 0; i < 3;i++){
+        thisGraph.yearDividers[i].x1 = divisionWidth * (i + 1);
+        thisGraph.yearDividers[i].x2 = thisGraph.yearDividers[i].x1;
+        thisGraph.yearDividers[i].y1 = 0;
+        thisGraph.yearDividers[i].y2 = y;
+      }
+
+      thisGraph.dividers
+        .attr("x1", function(d){ return d.x1; })
+        .attr("x2", function(d){ return d.x2; })
+        .attr("y1", function(d){ return d.y1; })
+        .attr("y2", function(d){ return d.y2; });
+
+      var years = [{},{},{},{}];
+
+      for(var i = 0; i < 4; i++){
+        if(i === 1 || i === 2)
+          years[i].x = (thisGraph.yearDividers[i].x1 + thisGraph.yearDividers[i - 1].x1) / 2;
+        else if(i === 0)
+          years[i].x = divisionWidth / 2;
+        else if(i == 3)
+          years[i].x = x - (divisionWidth / 2);
+
+        years[i].y = 20;
+        years[i].text = "Year " + (i+1);
+      }
+
+      thisGraph.yearLabels = thisGraph.yearLabels.data(years);
+
+      thisGraph.yearLabels
+        .attr("x", function(d, i){ return d.x - 21.5})
+        .attr("y", function(d){ return d.y })
+        .text(function(d){ return d.text });
+    }
+
+    GraphCreator.prototype.zoomed = function(){
+      this.state.justScaleTransGraph = true;
+      this.scale = d3.event.scale;
+      this.translate = d3.event.translate;
+      d3.select("." + this.consts.graphClass)
+        .attr("transform", "translate(" + d3.event.translate + ") scale(" + d3.event.scale + ")"); 
+    };
+
+    GraphCreator.prototype.updateWindow = function(svg){
+      var docEl = document.documentElement,
+          bodyEl = document.getElementsByTagName('body')[0];
+      var x = window.innerWidth || docEl.clientWidth || bodyEl.clientWidth;
+      var y = window.innerHeight|| docEl.clientHeight|| bodyEl.clientHeight;
+      svg.attr("width", x).attr("height", y);
+      this.updateDividers(x,y);
+
+      for(var i = 0; i < this.nodes.length;i++){
+        this.nodes[i].x *= (x / this.svgWidth);
+        this.nodes[i].y *= (y / this.svgHeight);
+      }
+
+      if($("#smallipop_form").length){
+        $("#smallipop_form").attr('width')
+      }
+
+      this.updateGraph();
+      this.svgHeight = y;
+      this.svgWidth = x;
+    };
+
+    GraphCreator.prototype.updateNodeRadius = function(radius){
+      this.nodeRadius = radius;
+      this.updateGraph();
+    }
+    
+    /**** MAIN ****/
+
+    // warn the user when leaving
+    window.onbeforeunload = function(){
+      return "Make sure to save your graph locally before leaving";
+    };    
+
+    var docEl = document.documentElement,
+        bodyEl = document.getElementsByTagName('body')[0];
+    
+    var width = window.innerWidth || docEl.clientWidth || bodyEl.clientWidth,
+        height =  window.innerHeight|| docEl.clientHeight|| bodyEl.clientHeight;
+
+    var nodes = [];
+    var edges = [];
+
+    /** MAIN SVG **/
+    var svg = d3.select("#graph_div").append("svg")
+          .attr("width", width)
+          .attr("height", height);
+    graph = new GraphCreator(svg, '#graph_div', nodes, edges);
+        graph.setIdCt(0);
+    //was setIdCt(2)
+    graph.updateGraph();
+  })(window.d3, window.saveAs, window.Blob);

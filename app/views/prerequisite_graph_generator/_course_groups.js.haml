@@ -1,0 +1,22 @@
+:javascript
+
+  // RelationshipType and RequirementType objects from _enums.js.haml need to be in scope
+  var CourseGroup = function(courses,requirement_type,n){
+    this.courses = courses;
+
+    //Make sure requirement type is valid
+    if(requirement_type != RequirementType.MANDATORY || requirement_type != RequirementType.NOFM){
+      console.log("RequirementType is invalid");
+      return false;
+    }
+
+    this.requirement_type = requirement_type;
+    this.n = courses.length;
+
+    if(requirement_type == RequirementType.NOFM){
+      if(n !== null)
+        this.n = n;
+      else
+        console.log("CourseGroup could not be defined.  Type defined as NOFM but paramter N not given.")
+    }
+  }

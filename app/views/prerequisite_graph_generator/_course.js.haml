@@ -1,0 +1,75 @@
+:javascript
+
+  var Course = function(course_subj_code,course_num,ctitle,requirements,times_offered) {
+    this.course_subj_code = course_subj_code || null;
+    this.course_num = course_num || null;
+    this.ctitle = ctitle || null;
+    this.requirements = requirements || [];
+    this.times_offered = times_offered || null;
+  }
+
+  Course.prototype.requirementsFromJson = function(reqs){
+    var requirements = [];
+
+    reqs.forEach(function(req,i){
+      if(Helper.prototype.isArray(req)){
+        req.forEach(function(r,j){
+          if(j === 0){
+            requirements[i] = [{
+              node: Node.prototype.fromJson(r.node), 
+              requirement_type: r.requirement_type
+            }]
+          } else {
+            requirements[i].push({
+              node: Node.prototype.fromJson(r.node), 
+              requirement_type: r.requirement_type
+            })
+          }
+        })
+      } else {
+        requirements.push({
+          node: Node.prototype.fromJson(req.node), 
+          requirement_type: req.requirement_type
+        })
+      }
+    });
+
+    return requirements;
+  }
+
+  Course.prototype.toJson = function() {
+    return {
+      course_subj_code: this.course_subj_code,
+      course_num: this.course_num,
+      ctitle: this.ctitle,
+      requirements: this.requirements,
+      times_offered: this.times_offered
+    }
+  }
+
+  Course.prototype.isSameCourse = function(subj_code,course_num){
+    return this.course_subj_code === subj_code && this.course_num === course_num;
+  }
+
+  Course.prototype.findRequirementIndex = function(subj_code,course_num){
+    var thisCourse = this,
+      index = -1,
+      stop = false;
+
+    thisCourse.requirements.forEach(function(req,i){
+      if(Object.prototype.toString.call(req) === '[object Array]'){
+        req.forEach(function(r,j){
+          if(!stop && r.course.isSameCourse(subj_code,course_num)){
+            index = [i,j];
+            stop = true;
+          }
+        });
+      }else
+        if(!stop && req.course.isSameCourse(subj_code,course_num)){
+          index = i;
+          stop = true;
+        }
+    })
+
+    return index;
+  }

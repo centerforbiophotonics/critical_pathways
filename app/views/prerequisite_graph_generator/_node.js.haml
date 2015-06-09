@@ -1,0 +1,30 @@
+:javascript
+
+  var Node = function(id, x, y, course){
+    this.id = id;
+    this.x = x;
+    this.y = y;
+    this.title = (course.course_subj_code || '') + " " + (course.course_num || '');
+    this.course = new Course(course.course_subj_code,
+      course.course_num,
+      course.ctitle,
+      course.requirements !== undefined ? Course.prototype.requirementsFromJson(course.requirements) : undefined,
+      course.times_offered
+    );
+  }
+
+  Node.prototype.fromJson = function(nodeJson){
+    return new Node(nodeJson.id,nodeJson.x,nodeJson.y,nodeJson.course);
+  }
+
+  Node.prototype.toJson = function() {
+    return {id: this.id, title: this.title, x: this.x, y: this.y, course: this.course.toJson() };
+  }
+
+  Node.prototype.updateCourseInfo = function(course_subj_code,course_num,ctitle) {
+    this.course.course_subj_code = course_subj_code;
+    this.course.course_num = course_num;
+    this.course.ctitle = ctitle;
+    this.title = course_subj_code + " " + course_num;
+  }
+
