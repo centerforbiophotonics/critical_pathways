@@ -6,7 +6,6 @@ gem 'rails', '4.2.0'
 
 gem 'tzinfo-data'
 
-gem 'composite_primary_keys', '=8.0.0'
 # Use SCSS for stylesheets
 gem 'sass-rails', '~> 5.0'
 # Use Uglifier as compressor for JavaScript assets
@@ -15,6 +14,8 @@ gem "haml-rails", "~> 0.8"
 
 
 #javascript libraries
+gem 'jquery-rails'
+gem 'blockuijs-rails',  :git => 'git://github.com/rusanu/blockuijs-rails.git'
 gem "select2-rails"
 gem 'jquery-datatables-rails', github: 'rweng/jquery-datatables-rails'
 
@@ -23,10 +24,6 @@ gem 'jquery-datatables-rails', github: 'rweng/jquery-datatables-rails'
 gem 'coffee-rails', '~> 4.1.0'
 # See https://github.com/sstephenson/execjs#readme for more supported runtimes
 # gem 'therubyracer', platforms: :ruby
-
-# Use jquery as the JavaScript library
-gem 'jquery-rails'
-gem 'blockuijs-rails',  :git => 'git://github.com/rusanu/blockuijs-rails.git'
 
 
 # Build JSON APIs with ease. Read more: https://github.com/rails/jbuilder
@@ -38,7 +35,7 @@ gem 'sdoc', '~> 0.4.0', group: :doc
 # gem 'bcrypt', '~> 3.1.7'
 
 # Use Unicorn as the app server
-# gem 'unicorn'
+gem 'unicorn'
 
 # Use Capistrano for deployment
 # gem 'capistrano-rails', group: :development
@@ -57,5 +54,5 @@ group :development, :test do
 end
 
 # Use sqlite3 as the database for Active Record
-gem 'sqlite3', :group => [:development, :test]
-gem 'pg', :group => :production
+gem 'sqlite3'#, :group => [:development, :test]
+# gem 'pg', :group => :production
