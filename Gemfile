@@ -57,5 +57,5 @@ group :development, :test do
 end
 
 # Use sqlite3 as the database for Active Record
-gem 'sqlite3', :group => [:development, :test]
-gem 'pg', :group => :production
+gem 'sqlite3'#, :group => [:development, :test]
+#gem 'pg', :group => :production
