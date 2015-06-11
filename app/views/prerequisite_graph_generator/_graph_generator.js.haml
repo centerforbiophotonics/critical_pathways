@@ -30,7 +30,7 @@
       * must choose N will be a group
       */
       thisGraph.edges = edges || [];
-      
+
       //Keeps track of tooltip element
       thisGraph.tooltipDiv = null;
       thisGraph.tooltipEdge = null;
@@ -245,9 +245,62 @@
       });
 
       d3.select('#download_course_info').on("click", function(){
-        var headers = ["Course","Fall Offerings","Winter Offerings","Spring Offerings","Summer Offerings",
-          "Fall Avg Size","Winter Avg Size", "Spring Avg Size", "Summer Avg Size",
-          "Min Prior Quarters","Number Dependent Courses"];
+        var years = 4;
+        var headers = ["Course","Fall Offerings","Fall Avg Size","Winter Offerings","Winter Avg Size",
+          "Spring Offerings","Spring Avg Size","Summer Sessoin 1 Offerings","Summer Session 1 Avg Size",
+          "Summer Session 2 Offerings", "Summer Session 2 Avg Size", "Special Summer Session Offerings",
+          "Special Summer Session Avg Size", "Extra Session Offerings", "Extra Session Avg Size",
+          "Summer Quarter Offerings","Summer Quarter Avg Size","Min Prior Quarters","Number Dependent Courses"];
+        var adjList = {'directed':{}, 'reversed':{}}
+        var courseInfo = [headers];
+        var terms = ['fall', 'winter','spring','summer1', 'summer2','summer_special','summer_extra', 'summer_quarter'];
+
+        thisGraph.nodes.forEach(function(d){
+          var id = d.id.toString();
+          adjList['directed'][id] = [];
+          adjList['reversed'][id] = [];
+        });
+
+        thisGraph.edges.forEach(function(edge){
+          var sourceIdStr = edge.source.id.toString(),
+            targetIdStr = edge.target.id.toString();
+
+          adjList['directed'][sourceIdStr].push(targetIdStr);
+          adjList['reversed'][targetIdStr].push(sourceIdStr);
+        });
+
+        console.log(thisGraph.edges, adjList);
+        thisGraph.nodes.forEach(function(d){
+          var history = thisGraph.getCourseHistory.call(thisGraph, d),
+            course = d.course, thisCourse = [d.title];
+          var termMap = history.term_map;
+
+          terms.forEach(function(term){
+            thisCourse.push(history.offerings[term] + ' out of ' + years);
+            thisCourse.push(Math.round(history.size[term]/history.offerings[term]));
+          });
+
+          var minPriorQuarters = thisGraph.minimumPriorQuarters.call(thisGraph,d,adjList['reversed']);
+          thisCourse.push(minPriorQuarters);  
+
+          var numDependentCourses = thisGraph.BFS(adjList['directed'],d);
+          thisCourse.push(numDependentCourses);
+          courseInfo.push(thisCourse);
+        });
+
+        var dataString = '', csvContent = '';
+        courseInfo.forEach(function(infoArray, index){
+          dataString = infoArray.join(",");
+          csvContent += index < courseInfo.length ? dataString+ "\n" : dataString;
+        }); 
+
+        var blob = new Blob([csvContent]);
+        var filename = prompt("Please enter the name of the file you want to save to (will save with .csv extension)");
+
+        if(filename === "" || (filename !== null && filename.trim() === ""))
+          alert('Filename cannot be blank');
+        else if(filename && filename !== "null")
+          saveAs(blob, filename+".csv");
 
         $("#download_div").slideToggle();
       });
@@ -353,6 +406,86 @@
     };
 
     /* PROTOTYPE FUNCTIONS */
+
+    GraphCreator.prototype.BFS = function(adjList,d){
+      var thisGraph = this, myQueue = new Array(), visited = {}, 
+        sourceId = d.id.toString(), numDependents = 0;
+
+      myQueue.push(sourceId);
+
+      for(var key in adjList) visited[key] = false;
+
+      visited[key] = true;
+
+      while(myQueue.length !== 0){
+        var v = myQueue.shift();
+
+        if(v !== sourceId) numDependents++;
+
+        adjList[v].forEach(function(u){
+          if(!visited[u]){
+            myQueue.push(u);
+            visited[u] = true;
+          }
+        });
+      }
+
+      return numDependents;
+    }
+
+    GraphCreator.prototype.minimumPriorQuarters = function(d, adjList){
+      var thisGraph = this,
+        sourceKey = d.id.toString(),
+        numNodes = thisGraph.nodes.length,
+        data = {'stack': new Array(), 'dist': {}, 'visited': {}};
+
+      for(var key in adjList) data.visited[key] = false;
+
+      for(var key in data.visited){
+        if(!data.visited[key]){
+          data = thisGraph.topologicalSort(key,adjList,data);
+        }
+      }
+
+      for(var key in data.visited){
+        data.dist[key] = -1;
+      }
+
+      data.dist[sourceKey] = 0;
+
+      while(data.stack.length !== 0){
+        var u = data.stack.pop();
+
+        if(data.dist[u] !== -1){
+          adjList[u].forEach(function(v){
+            if(data.dist[v] < data.dist[u] + 1)
+              data.dist[v] = data.dist[u] + 1;
+          });
+        }
+      }
+
+      //Get longest distance and return it
+      var max = -1; 
+      for(var key in data.dist)
+        if(data.dist[key] > max)
+          max = data.dist[key];
+
+      return max;
+    }
+
+    GraphCreator.prototype.topologicalSort = function(nodeId,adjList,data){
+      var thisGraph = this;
+
+      data.visited[nodeId] = true;
+      adjList[nodeId].forEach(function(key){
+        if(!data.visited[key])
+          data = thisGraph.topologicalSort(key,adjList,data);
+      });
+
+      data.stack.push(nodeId);
+
+      return data;
+    }
 
     GraphCreator.prototype.dragmove = function(d,eThis) {
       var thisGraph = this;
@@ -1156,48 +1289,43 @@
       )
     }
 
-    GraphCreator.prototype.courseHistory = function(d) {
+    GraphCreator.prototype.getCourseHistory = function(d) {
       var thisGraph = this,
-        history = {offerings: {'fall': 0, 'winter': 0,'spring': 0,'summer': 0},
-         size: {'fall': 0, 'winter': 0,'spring': 0,'summer': 0}},
+        history = {
+          offerings: {'fall': 0, 'winter': 0,'spring': 0,'summer1': 0, 
+            'summer2': 0, 'summer_special': 0, 'summer_quarter': 0, 'summer_extra': 0},
+          size: {'fall': 0, 'winter': 0,'spring': 0,'summer': 0, 'summer1': 0,
+            'summer2': 0, 'summer_special': 0, 'summer_quarter': 0, 'summer_extra': 0},
+          term_map: {'10': 'fall', '01': 'winter', '03': 'spring', '05': 'summer1',
+            '07': 'summer2', '06': 'summer_special','08':'summer_quarter','04': 'summer_extra' }
+        },
         summerYears = [],
         course_terms = course_data[d.course.course_subj_code][d.course.course_num].terms_offered;
+      var termCodes = history.term_map;
 
-        for(var key in course_terms){
-          var keyNum = parseInt(key);
-
-
-          if(key >= "201103"){
-            switch (keyNum % 10) {
-              case 0:
-                history.offerings['fall']++;
-                history.size['fall'] += course_terms[key];
-                break;
-              case 1:
-                history.offerings['winter']++;
-                history.size['winter'] += course_terms[key];
-                break;
-              case 3:
-                history.offerings['spring']++;
-                history.size['spring'] += course_terms[key];
-                break;
-              default:
-                if(summerYears.indexOf(key.substr(0,4)) === -1){
-                  history.offerings['summer']++;
-                  summerYears.push(key.substr(0,4))
-                }
-                history.size['summer'] += course_terms[key];
-                break;
-            }
-          }
+      for(var key in course_terms){
+        if(key >= "201103"){
+          var term = termCodes[key.substr(4)];
+          history.offerings[term]++;
+          history.size[term] += course_terms[key];
         }
+      }
 
-        return (
-          history.offerings['fall'] + " of the last 4 falls (Avg. Enrollment: " + Math.round(history.size['fall'] / history.offerings['fall']) + ")<br>" +
-          history.offerings['winter'] + " of the last 4 winters (Avg. Enrollment: " + Math.round(history.size['winter'] / history.offerings['winter']) + ")<br>" +
-          history.offerings['spring'] + " of the last 4 springs (Avg. Enrollment: " + Math.round(history.size['spring'] / history.offerings['spring']) + ")<br>" +
-          history.offerings['summer'] + " of the last 4 summers (Avg. Enrollment: " + Math.round(history.size['summer'] / history.offerings['summer']) + ")<br>"
-        );
+      return history;
+    }
+
+    GraphCreator.prototype.courseHistory = function(d) {
+      var thisGraph = this,
+        history = thisGraph.getCourseHistory(d), outputHtml = '',
+        termNames = {'10': 'falls', '01': 'winters', '03': 'springs', '05': 'Summer Session 1s', '07': 'Summer Session 2s',
+          '06': 'Summer Special Sessions', '08': 'Summer Quarters', '04': 'Extra Sessions'};
+      var termMap = history.term_map;
+
+      for(var key in history.term_map){
+        outputHtml += history.offerings[termMap[key]] !== 0 ? (history.offerings[termMap[key]] + " of the last 4 " + 
+          termNames[key]+" (Avg. Enrollment: " + Math.round(history.size[termMap[key]] / history.offerings[termMap[key]]) + ")<br>") : '';
+      }
+      return outputHtml;
     }
 
     GraphCreator.prototype.courseRequirements = function(d) {
