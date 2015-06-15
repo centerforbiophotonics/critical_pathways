@@ -272,6 +272,7 @@
             var subj_code = $('#course_subj_code_select_'+reqId+'_'+option).val(),
               course_num = $('#course_num_select_'+reqId+'_'+option).val(),
               ctitle = course_data[subj_code][course_num]['ctitle'],
+              units = course_data[subj_code][course_num]['units'],
               prereq_type = parseInt($('#prereq_type_select_'+reqId+'_'+option).val());
 
             if(subj_code === "" || course_num === "" || prereq_type === ""){
@@ -286,6 +287,7 @@
                   course_subj_code: subj_code,
                   course_num: course_num,
                   ctitle: ctitle,
+                  units: units,
                   requirement_type: prereq_type
                 });
               }

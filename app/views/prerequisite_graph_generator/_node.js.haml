@@ -8,6 +8,7 @@
     this.course = new Course(course.course_subj_code,
       course.course_num,
       course.ctitle,
+      course.units,
       course.requirements !== undefined ? Course.prototype.requirementsFromJson(course.requirements) : undefined,
       course.times_offered
     );
@@ -21,10 +22,11 @@
     return {id: this.id, title: this.title, x: this.x, y: this.y, course: this.course.toJson() };
   }
 
-  Node.prototype.updateCourseInfo = function(course_subj_code,course_num,ctitle) {
+  Node.prototype.updateCourseInfo = function(course_subj_code,course_num,ctitle,units) {
     this.course.course_subj_code = course_subj_code;
     this.course.course_num = course_num;
     this.course.ctitle = ctitle;
+    this.course.units = units;
     this.title = course_subj_code + " " + course_num;
   }
 

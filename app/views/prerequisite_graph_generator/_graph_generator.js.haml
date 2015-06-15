@@ -269,7 +269,6 @@
           adjList['reversed'][targetIdStr].push(sourceIdStr);
         });
 
-        console.log(thisGraph.edges, adjList);
         thisGraph.nodes.forEach(function(d){
           var history = thisGraph.getCourseHistory.call(thisGraph, d),
             course = d.course, thisCourse = [d.title];
@@ -801,6 +800,7 @@
       var thisGraph = this, idx;      
       var course_subj_code = $("#course_subj_code_select").val(),
         course_num = $("#course_num_select").val(),
+        units = course_data[course_subj_code][course_num]['units'],
         ctitle = course_data[course_subj_code][course_num]['ctitle'];
 
       //Find node to be updated
@@ -816,7 +816,7 @@
         return false;
 
       //Update node with new course info
-      thisGraph.nodes[idx].updateCourseInfo(course_subj_code,course_num,ctitle);
+      thisGraph.nodes[idx].updateCourseInfo(course_subj_code,course_num,ctitle,units);
 
       d3node.selectAll('text').remove();
       d3node.title = thisGraph.nodes[idx].title;
@@ -899,6 +899,7 @@
     }
 
     GraphCreator.prototype.pathMouseDown = function(d3path, d){
+      console.log(this);
       var thisGraph = this,
           state = thisGraph.state,
           edge = d;
@@ -909,7 +910,7 @@
         thisGraph.generateTooltipDiv(thisGraph.generateEdgeTooltipHtml, "tooltip", d,d3path);
       }
 
-      if (state.selectedNode.length > 0){
+      if (state.selectedNodes.length > 0){
         thisGraph.removeSelectFromNodes();
       }
       
@@ -1279,6 +1280,7 @@
 
       return (
         '<h3>'+d.title+': '+d.course.ctitle+'</h3>' +
+        '<a style="test-algin: left"><strong>Units</strong>: '+ d.course.units +'<br>'+
         '<p style="text-align: left"><strong>Past Course Offerings</strong>: '+
         '<br>' +
         thisGraph.courseHistory(d) +
@@ -1406,7 +1408,7 @@
           state.justDragged = false;
         } else{
           // clicked, not dragged
-          if (d3.event.shiftKey){
+          if (d3.event.shiftKey && !$("#smallipop_form").length){
             // shift-clicked node: edit node info
             thisGraph.createCourseSelect.call(thisGraph,d3node,d);
           } else{

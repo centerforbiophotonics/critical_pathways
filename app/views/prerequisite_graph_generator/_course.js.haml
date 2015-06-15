@@ -1,9 +1,10 @@
 :javascript
 
-  var Course = function(course_subj_code,course_num,ctitle,requirements,times_offered) {
+  var Course = function(course_subj_code,course_num,ctitle,units,requirements,times_offered) {
     this.course_subj_code = course_subj_code || null;
     this.course_num = course_num || null;
     this.ctitle = ctitle || null;
+    this.units = units || null;
     this.requirements = requirements || [];
     this.times_offered = times_offered || null;
   }
@@ -42,6 +43,7 @@
       course_subj_code: this.course_subj_code,
       course_num: this.course_num,
       ctitle: this.ctitle,
+      units: this,units,
       requirements: this.requirements,
       times_offered: this.times_offered
     }
