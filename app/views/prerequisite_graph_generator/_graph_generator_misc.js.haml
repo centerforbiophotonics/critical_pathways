@@ -1,0 +1,45 @@
+:javascript
+  var MODULE = (function(my){
+    my.GraphCreator.prototype.setIdCt = function(idct){
+      this.idct = idct;
+    };
+
+    my.GraphCreator.prototype.consts =  {
+      selectedClass: "selected",
+      connectClass: "connect-node",
+      circleGClass: "conceptG",
+      graphClass: "graph",
+      activeEditId: "active-editing",
+      BACKSPACE_KEY: 8,
+      DELETE_KEY: 46,
+      ENTER_KEY: 13,
+      SHIFT_KEY: 16
+    };
+
+    my.GraphCreator.prototype.deleteGraph = function(skipPrompt){
+      var thisGraph = this,
+          doDelete = true;
+      if (!skipPrompt){
+        doDelete = window.confirm("Press OK to delete this graph");
+      }
+      if(doDelete){
+        thisGraph.setIdCt(0);
+        thisGraph.edgeGrp = 0;
+        thisGraph.colorScale = [];
+        thisGraph.optionalGroups = [];
+        thisGraph.nodes = [];
+        thisGraph.edges = [];
+        thisGraph.updateGraph();
+      }
+    };
+
+    my.GraphCreator.prototype.parseClasses = function(c) {
+      for(var i in c)
+        if(c[i] == "PREREQ" || c[i] == "COREQ" || c[i] == "COREQ_STRICT" || c[i] == "RECOMMENDED")
+          return c[i];
+
+      return null;
+    }
+    
+    return my;
+  })(MODULE || {});

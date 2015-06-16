@@ -1,0 +1,154 @@
+:javascript
+  var MODULE = (function(my){
+    my.GraphCreator.prototype.deleteSelectedNodes = function(){
+      var thisGraph = this;
+      var state = thisGraph.state;
+      var selectedNodes = state.selectedNodes;
+
+      d3.event.preventDefault();
+
+      if (selectedNodes.length && window.confirm('Are you sure you want to delete the selected courses?')){
+        selectedNodes.forEach(function(selectedNode){
+          thisGraph.nodes.splice(thisGraph.nodes.indexOf(selectedNode), 1);
+          thisGraph.spliceLinksForNode(selectedNode);
+        });
+
+        state.selectedNodes = [];
+        thisGraph.updateGraph();
+      }
+    }
+    
+    my.GraphCreator.prototype.findNodeIndex = function(d) {
+      var thisGraph = this;
+
+      for(var idx = 0; idx < thisGraph.nodes.length;idx++)
+        if(d.id === thisGraph.nodes[idx].id)
+          return idx;
+
+      //Node not found
+      return -1;      
+    }
+
+    /* select all text in element: taken from http://stackoverflow.com/questions/6139107/programatically-select-text-in-a-contenteditable-html-element */
+    my.GraphCreator.prototype.selectElementContents = function(el) {
+      var range = document.createRange();
+      range.selectNodeContents(el);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    };
+
+    /* insert svg line breaks: taken from http://stackoverflow.com/questions/13241475/how-do-i-include-newlines-in-labels-in-d3-charts */
+    my.GraphCreator.prototype.insertTitleLinebreaks = function (gEl, title) {
+      var words = title.split(/\s+/g),
+          nwords = words.length;
+      var el = gEl.append("text")
+            .attr("text-anchor","middle")
+            .attr("dy", "-" + (nwords-1)*7.5);
+      for (var i = 0; i < words.length; i++) {
+        var tspan = el.append('tspan').text(words[i]);
+        if (i > 0)
+          tspan.attr('x', 0).attr('dy', '15');
+      }
+    };
+
+    
+    // remove edges associated with a node
+    my.GraphCreator.prototype.spliceLinksForNode = function(node) {
+      var thisGraph = this,
+        toSplice = thisGraph.edges.filter(function(l,i) {
+          var isSource = l.source === node, isTarget = l.target === node;
+
+          if(isSource){
+            var found = false;
+            var targetNode = l.target;
+            var nodeIdx = thisGraph.findNodeIndex(targetNode);
+            l.target.course.requirements.forEach(function(req,j){
+              if(!found && thisGraph.helper.isArray(req)){
+                req.forEach(function(r,k){
+                  if(!found && r.node.id === node.id){
+                    if(req.length === 2){
+                      var group = l.group;
+                      thisGraph.optionalGroups.splice(thisGraph.optionalGroups.indexOf(group),1);
+                      thisGraph.setGroupColors();
+                      thisGraph.nodes[nodeIdx].course.requirements[j].splice(k,1);
+                      thisGraph.nodes[nodeIdx].course.requirements[j] = thisGraph.nodes[nodeIdx].course.requirements[j][0];
+
+                      var edgeIdx = thisGraph.findEdgeIndex(thisGraph.nodes[nodeIdx].course.requirements[j].node,l.target);
+                      thisGraph.edges[edgeIdx].optional = false;
+                    }else {
+                      thisGraph.nodes[nodeIdx].course.requirements[j].splice(k,1);
+                    }
+                    found = true;
+                  }
+                });
+              }else if(!found && req.node.id === node.id){
+                thisGraph.nodes[nodeIdx].course.requirements.splice(j,1);
+                found = true;
+              }
+            })
+          }
+
+          return (isSource || isTarget);
+        });
+      toSplice.map(function(l) {
+        thisGraph.edges.splice(thisGraph.edges.indexOf(l), 1);
+      });
+    };
+
+    my.GraphCreator.prototype.replaceSelectNodes = function(d3Node, nodeData){
+      var thisGraph = this;
+      if (thisGraph.state.selectedNodes.length > 0){
+        thisGraph.removeSelectFromNodes();
+      }
+      d3Node.classed(this.consts.selectedClass, true);
+      thisGraph.state.selectedNodes.push(nodeData);
+    };
+    
+    my.GraphCreator.prototype.removeSelectFromNodes = function(){
+      var thisGraph = this;
+      thisGraph.circles.filter(function(cd){
+        return thisGraph.state.selectedNodes.filter(function(node){
+          return cd.id === node.id
+        }).length;
+      }).classed(thisGraph.consts.selectedClass, false);
+      thisGraph.state.selectedNodes = [];
+    };
+
+    my.GraphCreator.prototype.findSpaceForNode = function(node, leftNodes) {
+      var thisGraph = this, radius = thisGraph.nodeRadius;
+      var start_x = node.x - 3*radius,
+        start_y = node.y,
+        max_y = window.innerHeight,
+        max_x = window.innerWidth,
+        valid_placement = true,
+        next_y = start_y;
+
+      if(start_x < 0) start_x = radius;
+
+      for(var x=start_x; x >= radius;x -= radius){
+        for(var y=start_y,i=0; (y >= radius && y <= max_y - radius) || (next_y >= radius && next_y <= max_y - radius); y=start_y + radius*Math.floor((i+2)/2)*Math.pow(-1,i), i++){
+          if(y >= radius && y <= max_y - radius){
+            valid_placement = true;
+            for(var j = 0;j < leftNodes.length;j++){
+              var d = leftNodes[j];
+              if(Math.sqrt((d.x - x)*(d.x - x) + (d.y - y)*(d.y - y)) < 3*radius){
+                valid_placement = false;
+                break;
+              }
+            }
+            if(valid_placement) return [x,y];
+          }
+          next_y = start_y + radius*Math.floor((i+3)/2)*Math.pow(-1,i+1);
+        }
+      }
+
+      //No valid spot found, place near target node
+      if(start_y >= 3*radius)
+        return [node.x,node.y - 2*radius];
+      else
+        return [node.x,node.y + 2*radius];
+    }
+
+    return my;
+  })(MODULE || {});

@@ -1,0 +1,327 @@
+:javascript
+  var MODULE = (function(my){
+
+    // mousedown on node
+    my.GraphCreator.prototype.circleMouseDown = function(d3node, d){
+      var thisGraph = this,
+          state = thisGraph.state;
+      d3.event.stopPropagation();
+      state.mouseDownNode = d;
+      if (d3.event.shiftKey){
+        state.shiftNodeDrag = d3.event.shiftKey;
+        // reposition dragged directed edge
+        thisGraph.dragLine.classed('hidden', false)
+          .attr('d', 'M' + d.x + ',' + d.y + 'L' + d.x + ',' + d.y);
+        return;
+      }
+    };
+
+    my.GraphCreator.prototype.circleMouseUp = function(d3node, d){
+      var thisGraph = this,
+          state = thisGraph.state,
+          consts = thisGraph.consts;
+      // reset the states
+      state.shiftNodeDrag = false;    
+      d3node.classed(consts.connectClass, false);
+      
+      var mouseDownNode = state.mouseDownNode;
+
+      if (!mouseDownNode) return;
+
+      thisGraph.dragLine.classed("hidden", true);
+
+      if (mouseDownNode !== d){
+        //Don't continue if there is already an edge between these nodes
+        if(thisGraph.findEdgeIndex(mouseDownNode,d) > -1 || thisGraph.findEdgeIndex(d,mouseDownNode) > -1){
+          state.mouseDownNode = null;
+          return;
+        }
+
+        // we're in a different node: create new edge for mousedown edge and add to graph
+        thisGraph.createEdge(mouseDownNode,d,RelationshipType.PREREQ);
+        var newPrereq = {node: mouseDownNode, requirement_type: RelationshipType.PREREQ},
+          nodeIdx = thisGraph.findNodeIndex(d);
+
+        thisGraph.nodes[nodeIdx].course.requirements.push(newPrereq);
+      } else{
+        // we're in the same node
+        if (state.justDragged) {
+          // dragged, not clicked
+          state.justDragged = false;
+        } else{
+          // clicked, not dragged
+          if (d3.event.shiftKey && !$("#smallipop_form").length){
+            // shift-clicked node: edit node info
+            thisGraph.createCourseSelect.call(thisGraph,d3node,d);
+          } else{
+            if (state.selectedEdges.length && !d3.event.ctrlKey){
+              thisGraph.removeSelectFromEdges();
+            }
+            var prevNodes = state.selectedNodes;            
+            
+            if ((!prevNodes.length || 
+                !prevNodes.filter(function(prevNode){ return prevNode.id === d.id }).length)
+                && !d3.event.ctrlKey
+            ){
+              thisGraph.replaceSelectNodes(d3node, d);
+            } else if((!prevNodes.length || 
+                !prevNodes.filter(function(prevNode){ return prevNode.id === d.id }).length)
+                && d3.event.ctrlKey)
+            {
+              d3node.classed(this.consts.selectedClass, true);
+              thisGraph.state.selectedNodes.push(d);
+            } else if(prevNodes.filter(function(prevNode){ return prevNode.id === d.id }).length && d3.event.ctrlKey){
+                thisGraph.circles.filter(function(cd) { return cd.id === d.id }).classed(thisGraph.consts.selectedClass, false);
+                thisGraph.state.selectedNodes.splice(thisGraph.state.selectedNodes.indexOf(d),1);
+            }
+          }
+        }
+      }
+      state.mouseDownNode = null;
+      return;
+      
+    }; // end of circles mouseup
+
+    /* Context Menu Event Handlers */
+    my.GraphCreator.prototype.contextMenuGroupPaths = function(){
+
+    }
+
+    my.GraphCreator.prototype.contextMenuDeletePaths = function(){
+      this.deleteSelectedPaths();
+    }
+
+    my.GraphCreator.prototype.contextMenuDeleteNodes = function(){
+      this.deleteSelectedNodes();
+    }
+    /* End of Context Menu Event Handlers */
+
+    my.GraphCreator.prototype.dragmove = function(d,eThis) {
+      var thisGraph = this;
+
+      if (thisGraph.state.shiftNodeDrag){
+        thisGraph.dragLine.attr('d', 'M' + d.x + ',' + d.y + 'L' + d3.mouse(thisGraph.svgG.node())[0] + ',' + d3.mouse(this.svgG.node())[1]);
+      } else {
+        var selection = d3.selectAll('.selected');
+
+        if(selection[0].indexOf(eThis) === -1) {
+            selection.classed("selected", false);
+            thisGraph.state.selectedNodes = [];
+            selection = d3.select(eThis);
+            selection.classed("selected", true);
+            thisGraph.state.selectedNodes.push(d);
+        } 
+
+        selection.attr("transform", function(d) {
+            d.x += d3.event.dx;
+            d.y += d3.event.dy;
+            return "translate(" + [ d.x,d.y ] + ")"
+        })
+
+        eThis.parentNode.appendChild(eThis);
+        thisGraph.updateGraph();
+      }
+    };
+
+    my.GraphCreator.prototype.pathMouseDown = function(d3path, d){
+      var thisGraph = this,
+          state = thisGraph.state,
+          edge = d;
+      d3.event.stopPropagation();
+      state.mouseDownLink = d;
+
+      if(d3.event.shiftKey){
+        thisGraph.generateTooltipDiv(thisGraph.generateEdgeTooltipHtml, "tooltip", d,d3path);
+      }
+
+      if (!d3.event.ctrlKey && state.selectedNodes.length > 0){
+        thisGraph.removeSelectFromNodes();
+      }
+      
+      var prevEdges = state.selectedEdges;
+      var edgeNotSelected = !prevEdges.filter(function(e){ return e === d }).length;  
+      if (!prevEdges.length || edgeNotSelected){
+        thisGraph.addSelectEdge(d3path, d, !d3.event.ctrlKey);
+      } else{
+        thisGraph.removeSelectFromEdges(edgeNotSelected || !d3.event.ctrlKey ? undefined : d);
+      }
+    };
+
+    // mousedown on main svg
+    my.GraphCreator.prototype.svgMouseDown = function(svg,eThis){
+      var thisGraph = this;
+
+      thisGraph.state.graphMouseDown = true;
+      d3.selectAll('g.selected').classed("selected", false);
+      d3.selectAll('path.edge.selected').classed("selected", false);
+      thisGraph.state.selectedNodes = [];
+      thisGraph.state.selectedEdges = [];
+
+      if(d3.event.shiftKey){
+        thisGraph.state.draggableSelection = true;
+        var p = d3.mouse(eThis);
+
+        svg.append("rect")
+        .attr({
+            rx      : 6,
+            ry      : 6,
+            class   : "selection",
+            x       : p[0],
+            y       : p[1],
+            width   : 0,
+            height  : 0
+        })
+      }
+    };
+
+    my.GraphCreator.prototype.svgMouseMove = function(svg,eThis){
+      var thisGraph = this;
+      var s = svg.select("rect.selection");
+
+      if(!s.empty() && thisGraph.state.draggableSelection) {
+        thisGraph.state.selectionDragged = true;
+        var p = d3.mouse(eThis),
+          d = {
+            x       : parseInt(s.attr("x"), 10),
+            y       : parseInt(s.attr("y"), 10),
+            width   : parseInt(s.attr("width"), 10),
+            height  : parseInt(s.attr("height"), 10)
+          },
+          move = {
+            x : p[0] - d.x,
+            y : p[1] - d.y
+          }
+        ;
+
+        if(move.x < 1 || (move.x*2<d.width)) {
+          d.x = p[0];
+          d.width -= move.x;
+        } else {
+          d.width = move.x;       
+        }
+
+        if(move.y < 1 || (move.y*2<d.height)) {
+          d.y = p[1];
+          d.height -= move.y;
+        } else {
+          d.height = move.y;       
+        }
+         
+        s.attr(d);
+
+        //deselect all temporary selected state objects
+        d3.selectAll('g.conceptG.selection.selected').classed("selected", false);
+        d3.selectAll('path.edge.selection.selected').classed("selected", false);
+        thisGraph.state.selectedNodes = [];
+        thisGraph.state.selectedEdges = [];
+
+        var radius = thisGraph.nodeRadius,
+          dx = (d.x - thisGraph.translate[0]) / thisGraph.scale,
+          dy = (d.y  - thisGraph.translate[1]) / thisGraph.scale,
+          dWidth = d.width / thisGraph.scale,
+          dHeight = d.height / thisGraph.scale;
+
+        //Select nodes
+        svg.selectAll('g.conceptG circle').each(function(node, i) {
+          if( 
+            !d3.select(this).classed("selected") && 
+            node.x - radius >= dx && node.x + radius <= dx + dWidth && 
+            node.y - radius >= dy && node.y + radius <= dy + dHeight
+          ) {
+            d3.select(this.parentNode)
+              .classed("selection", true)
+              .classed("selected", true);
+            thisGraph.state.selectedNodes.push(node);
+          }
+
+        });
+
+        //Select edges
+        svg.selectAll('path.edge').each(function(edge, i){
+          if(!d3.select(this).classed("selected") &&
+            thisGraph.state.selectedNodes.filter(function(node){ return node === edge.source }).length &&
+            thisGraph.state.selectedNodes.filter(function(node){ return node === edge.target }).length
+          ){
+            thisGraph.state.selectedEdges.push(edge);
+            d3.select(this).classed("selection", true).classed("selected", true);
+          }
+        })
+      } else
+        s.remove();
+    }
+
+    // mouseup on main svg
+    my.GraphCreator.prototype.svgMouseUp = function(svg,eThis){
+      var thisGraph = this,
+          state = thisGraph.state;
+
+      // remove selection frame
+      svg.selectAll("rect.selection").remove();
+
+      // remove temporary selection marker class
+      d3.selectAll('g.conceptG.selection').classed("selection", false);
+
+      if (state.justScaleTransGraph) {
+        // dragged not clicked
+        state.justScaleTransGraph = false;
+      } else if (state.graphMouseDown && d3.event.shiftKey && !thisGraph.state.selectionDragged){
+        // clicked not dragged from svg
+        var xycoords = d3.mouse(thisGraph.svgG.node()),
+            d = new Node(thisGraph.idct++, xycoords[0], xycoords[1], {});
+        thisGraph.nodes.push(d);
+        thisGraph.updateGraph();
+        thisGraph.createCourseSelect(thisGraph.circles.filter(function(dval){return dval.id == d.id}),d);
+      } else if (state.shiftNodeDrag){
+        // dragged from node
+        state.shiftNodeDrag = false;
+        thisGraph.dragLine.classed("hidden", true);
+      }
+      state.graphMouseDown = false;
+      state.draggableSelection = false;
+      state.selectionDragged = false;
+    };
+
+    // keydown on main svg
+    my.GraphCreator.prototype.svgKeyDown = function() {
+      var thisGraph = this,
+          state = thisGraph.state,
+          consts = thisGraph.consts;
+      // make sure repeated key presses don't register for each keydown
+      if(state.lastKeyDown !== -1) return;
+
+      state.lastKeyDown = d3.event.keyCode;
+      var selectedNodes = state.selectedNodes,
+          selectedEdges = state.selectedEdges;
+
+      switch(d3.event.keyCode) {
+      case consts.SHIFT_KEY:
+        d3.select('body').style('cursor','pointer');
+        break;
+      case consts.BACKSPACE_KEY:
+        break;
+      case consts.DELETE_KEY:
+        d3.event.preventDefault();
+        if (selectedNodes.length){
+          thisGraph.deleteSelectedNodes();
+        } else if (selectedEdges.length){
+          thisGraph.deleteSelectedPaths();
+        }
+        break;
+      }
+    };
+
+    my.GraphCreator.prototype.svgKeyUp = function() {
+      this.state.lastKeyDown = -1;
+      d3.select('body').style('cursor','auto');
+    };
+
+    my.GraphCreator.prototype.zoomed = function(){
+      this.state.justScaleTransGraph = true;
+      this.scale = d3.event.scale;
+      this.translate = d3.event.translate;
+      d3.select("." + this.consts.graphClass)
+        .attr("transform", "translate(" + d3.event.translate + ") scale(" + d3.event.scale + ")"); 
+    };
+    
+    return my;
+  })(MODULE || {});

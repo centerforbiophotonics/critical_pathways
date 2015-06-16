@@ -1,0 +1,218 @@
+:javascript
+  var MODULE = (function(my){
+    my.GraphCreator.prototype.addSelectEdge = function(d3Path, edgeData, replace){
+      var thisGraph = this;
+      d3Path.classed(thisGraph.consts.selectedClass, true);
+      if (thisGraph.state.selectedEdges && replace){
+        thisGraph.removeSelectFromEdges();
+      }
+      thisGraph.state.selectedEdges.push(edgeData);
+    };
+
+    my.GraphCreator.prototype.removeEdges = function() {
+      var thisGraph = this,
+        node = thisGraph.prereqContainer.node,
+        prereqs = thisGraph.prereqContainer.prereqs,
+        idx = thisGraph.findNodeIndex(node),
+        current_prereqs = node.course.requirements,
+        removedEdges = [];
+
+      current_prereqs.forEach(function(req,reqIdx){
+        var found = false;
+        if(thisGraph.helper.isArray(req)){
+          req.forEach(function(r,rIdx){
+            found = false;
+
+            for(var i in prereqs){
+              for(var j in prereqs[i])
+                if(r.node.course.isSameCourse(prereqs[i][j].course_subj_code,prereqs[i][j].course_num)){
+                  found = true;
+                  break;
+                }
+              if(found) break;
+            }
+            if(!found){
+              thisGraph.edges.splice(thisGraph.findEdgeIndex(r.node,node),1);
+              thisGraph.nodes[idx].course.requirements[reqIdx].splice(rIdx,1);
+            }
+          });
+        }else {
+          for(var i in prereqs){
+            for(var j in prereqs[i])    
+              if(req.node.course.isSameCourse(prereqs[i][j].course_subj_code,prereqs[i][j].course_num)){
+                found = true;
+                break;
+              }
+            if(found) break;      
+          }
+          if(!found){
+            thisGraph.edges.splice(thisGraph.findEdgeIndex(req.node,node),1);
+            thisGraph.nodes[idx].course.requirements.splice(reqIdx,1);
+          }
+        }
+      });
+    
+      thisGraph.updateGraph();
+    }
+
+    my.GraphCreator.prototype.removeSelectFromEdges = function(singleEdgeToDelete){
+      var thisGraph = this;
+      thisGraph.paths.filter(function(cd){
+        return singleEdgeToDelete ? cd === singleEdgeToDelete : 
+          (thisGraph.state.selectedEdges.filter(function(se){ return cd === se; }).length !== 0);
+      }).classed(thisGraph.consts.selectedClass, false);
+
+
+      if(singleEdgeToDelete){
+        thisGraph.state.selectedEdges.splice(thisGraph.state.selectedEdges.indexOf(singleEdgeToDelete),1);
+      } else{
+        thisGraph.state.selectedEdges = [];
+      }
+    };
+
+    my.GraphCreator.prototype.updatePathType = function(d3path, d) {
+      var thisGraph = this;
+      var classHash = {};
+      var idx;
+      var newType = $("#tooltip_select").val();
+
+      //Change css class
+      classHash[thisGraph.parseClasses(d3.select(thisGraph.tooltipEdge).attr("class").split(' '))] = false;
+      classHash[newType] = true;
+      d3.select(thisGraph.tooltipEdge).classed(classHash);
+
+      //Find correct Edge object
+      for(idx = 0; idx < thisGraph.edges.length;idx++){
+        if(thisGraph.edges[idx].source === d.source && thisGraph.edges[idx].target === d.target)
+          break;
+      }
+
+      //Update prerequisite type
+      thisGraph.edges[idx].type = RelationshipType[newType];
+      thisGraph.updateCourseRequirements(idx,RelationshipType[newType]);
+
+      $("#smallipop_form").smallipop('hide');
+      $("#smallipop_form").remove();
+      thisGraph.tooltipDiv = null;
+      thisGraph.tooltipEdge = null;
+    }
+
+    my.GraphCreator.prototype.setEdgeGroup = function(optionGroup,target) {
+      var group, thisGraph = this;
+
+      optionGroup.forEach(function(edge,i){
+        var edgeIndex = thisGraph.findEdgeIndex(edge.source,edge.target);
+
+        if(i === 0){
+          group = edge.group;
+        } else 
+          thisGraph.edges[edgeIndex].group = group;
+
+        thisGraph.edges[edgeIndex].optional = true;
+      });
+
+      thisGraph.optionalGroups.push(group);
+    }
+
+    my.GraphCreator.prototype.removeOldGroups = function(){
+      var thisGraph = this, numGroups = thisGraph.optionalGroups.length, idx = -1,
+        removeGroups = [], removeGroupIndices = [];
+
+      for(var i = 0; i < numGroups; i++){
+        var groupEdges = [];
+        idx = -1;
+        thisGraph.edges.forEach(function(d, j){ 
+          idx = j;
+          if(d.group == thisGraph.optionalGroups[i])
+            groupEdges.push(d);
+        });
+
+        if(groupEdges.length <= 1){
+          removeGroups.push(i);
+          removeGroupIndices.push(idx);
+        }
+      }
+      for(var i = 0;i < removeGroups.length;i++){
+        thisGraph.optionalGroups.splice(removeGroups[i]);
+        if(removeGroupIndices[i] !== -1)
+          thisGraph.edges[removeGroupIndices[i]].optional = false;
+      }
+    }
+
+    my.GraphCreator.prototype.setGroupColors = function() {
+      var thisGraph = this;
+      var  numGroups = parseInt(thisGraph.optionalGroups.length.toString(16).toUpperCase(),16),
+        groupColors = [], correction = numGroups === 0x1 ? 0x0 : 0x1;
+
+      for(var i = 0x0; i < numGroups;i++){
+        var decRed = 0xFF - Math.floor((i / (numGroups - correction))*0xFF),
+          decGreen = Math.floor((i / (numGroups - correction))*0xFF);
+
+        var padRed = decRed > 15 ? '' : '0',
+          padGreen = decGreen > 15 ? '' : '0';
+
+        var colorHex = '#' + padRed + decRed.toString(16).toUpperCase() + padGreen + decGreen.toString(16).toUpperCase() + '00';
+        groupColors.push(colorHex)
+      }
+      thisGraph.colorScale = groupColors;
+    }
+    my.GraphCreator.prototype.createEdge = function(source,target,relType,group) {
+      var thisGraph = this,
+        group = (group === undefined || group === null ) ? thisGraph.edgeGrp++ : group
+      var newEdge = new Edge(source, target, relType, group);
+
+      var filtRes = thisGraph.paths.filter(function(d){
+        if (d.source === newEdge.target && d.target === newEdge.source){
+          thisGraph.edges.splice(thisGraph.edges.indexOf(d), 1);
+        }
+        return d.source === newEdge.source && d.target === newEdge.target;
+      });
+      //There is not already an edge between these nodes
+      if (!filtRes[0].length){
+        thisGraph.edges.push(newEdge);
+        thisGraph.updateGraph();
+        return thisGraph.edges[thisGraph.edges.length - 1]
+      } 
+      //An edge already exists between these nodes
+      return thisGraph.edges[thisGraph.findEdgeIndex(source,target)];     
+    }
+
+    my.GraphCreator.prototype.deleteSelectedPaths = function(){
+      var thisGraph = this;
+      var state = thisGraph.state;
+      var selectedEdges = state.selectedEdges;
+
+      if(selectedEdges.length){
+        thisGraph.state.selectedEdges.forEach(function(edge){
+          var targetIdx = thisGraph.findNodeIndex(edge.target);
+          var reqIdx = edge.target.course.findRequirementIndex(edge.target.course.course_subj_code,
+            edge.target.course.course_num);
+
+          if(thisGraph.helper.isArray(reqIdx))
+            thisGraph.nodes[targetIdx].course.requirements[reqIdx[0]].splice(reqIdx[1],1);
+          else
+            thisGraph.nodes[targetIdx].course.requirements.splice(reqIdx,1);
+
+          thisGraph.edges.splice(thisGraph.edges.indexOf(edge), 1);
+        });
+
+        thisGraph.state.selectedEdges = [];
+        thisGraph.updateGraph();
+      }
+    }
+
+    my.GraphCreator.prototype.findEdgeIndex = function(source,target) {
+      var thisGraph = this;
+
+      for(var i in thisGraph.edges){
+        var thisEdge = thisGraph.edges[i];
+        if(thisEdge.source === source && thisEdge.target === target)
+          return i;
+      }
+
+      //Edge not found
+      return -1;
+    }
+
+    return my;
+  })(MODULE || {});

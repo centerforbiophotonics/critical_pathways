@@ -1,0 +1,83 @@
+:javascript
+  var MODULE = (function(my){
+    my.GraphCreator.prototype.BFS = function(adjList,d){
+      var thisGraph = this, myQueue = new Array(), visited = {}, 
+        sourceId = d.id.toString(), numDependents = 0;
+
+      myQueue.push(sourceId);
+
+      for(var key in adjList) visited[key] = false;
+
+      visited[key] = true;
+
+      while(myQueue.length !== 0){
+        var v = myQueue.shift();
+
+        if(v !== sourceId) numDependents++;
+
+        adjList[v].forEach(function(u){
+          if(!visited[u]){
+            myQueue.push(u);
+            visited[u] = true;
+          }
+        });
+      }
+
+      return numDependents;
+    }
+
+    my.GraphCreator.prototype.minimumPriorQuarters = function(d, adjList){
+      var thisGraph = this,
+        sourceKey = d.id.toString(),
+        numNodes = thisGraph.nodes.length,
+        data = {'stack': new Array(), 'dist': {}, 'visited': {}};
+
+      for(var key in adjList) data.visited[key] = false;
+
+      for(var key in data.visited){
+        if(!data.visited[key]){
+          data = thisGraph.topologicalSort(key,adjList,data);
+        }
+      }
+
+      for(var key in data.visited){
+        data.dist[key] = -1;
+      }
+
+      data.dist[sourceKey] = 0;
+
+      while(data.stack.length !== 0){
+        var u = data.stack.pop();
+
+        if(data.dist[u] !== -1){
+          adjList[u].forEach(function(v){
+            if(data.dist[v] < data.dist[u] + 1)
+              data.dist[v] = data.dist[u] + 1;
+          });
+        }
+      }
+
+      //Get longest distance and return it
+      var max = -1; 
+      for(var key in data.dist)
+        if(data.dist[key] > max)
+          max = data.dist[key];
+
+      return max;
+    }
+
+    my.GraphCreator.prototype.topologicalSort = function(nodeId,adjList,data){
+      var thisGraph = this;
+
+      data.visited[nodeId] = true;
+      adjList[nodeId].forEach(function(key){
+        if(!data.visited[key])
+          data = thisGraph.topologicalSort(key,adjList,data);
+      });
+
+      data.stack.push(nodeId);
+
+      return data;
+    }
+    return my;
+  })(MODULE || {});

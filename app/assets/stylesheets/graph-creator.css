@@ -173,12 +173,12 @@ g.connect-node circle{
     fill: #BEFFFF;
 }
 
-path.PREREQ.hidden{
+path.hidden{
     stroke-width: 0;
 }
 
-path.PREREQ.selected {
-    stroke: rgb(229, 172, 247);
+path.selected {
+    stroke: rgb(229, 172, 247) !important;
 }
 
 rect.selection {

@@ -61,13 +61,13 @@
     thisCourse.requirements.forEach(function(req,i){
       if(Object.prototype.toString.call(req) === '[object Array]'){
         req.forEach(function(r,j){
-          if(!stop && r.course.isSameCourse(subj_code,course_num)){
+          if(!stop && r.node.course.isSameCourse(subj_code,course_num)){
             index = [i,j];
             stop = true;
           }
         });
       }else
-        if(!stop && req.course.isSameCourse(subj_code,course_num)){
+        if(!stop && req.node.course.isSameCourse(subj_code,course_num)){
           index = i;
           stop = true;
         }

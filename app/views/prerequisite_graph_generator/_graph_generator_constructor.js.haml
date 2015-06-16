@@ -1,0 +1,425 @@
+:javascript
+  var MODULE = (function(my){
+    "use strict";
+    my.GraphCreator = function(svg, parentId, nodes, edges){
+      var thisGraph = this;
+
+      thisGraph.parentId = parentId;
+      thisGraph.idct = 0;
+      thisGraph.edgeGrp = 0;
+      thisGraph.prereqForm = null;
+      thisGraph.scale = 1.0;
+      thisGraph.translate = [0,0];
+      thisGraph.nodeRadius = 40;
+
+      /*  We have added a course attribute to each node.
+      *  This course object has the members 'course_subj_code' 
+      * which is the course subject code as shown in course catalog, course_num,
+      * which is that course's number for that specific subject code as shown in
+      * the course catalog, and times_offered, which is the expected number of times
+      * the course will be offered in a four year period
+      */
+      thisGraph.nodes = nodes || [];
+
+      /*Each element of edges has had type and group attributes added.
+      * Type represents the kind of relationship that the source and target share
+      * and group is the group an edge belongs to, e.g. a group of courses that are
+      * all required will be a group and a group of M classes from which a student
+      * must choose N will be a group
+      */
+      thisGraph.edges = edges || [];
+
+      //Keeps track of tooltip element
+      thisGraph.tooltipDiv = null;
+      thisGraph.tooltipEdge = null;
+      thisGraph.tooltipNode = null;
+
+      thisGraph.colorScale = [];
+
+      thisGraph.prereqContainer = {
+        node: null,
+        prereqs: []
+      }
+
+      thisGraph.deleteForm = false;
+      thisGraph.helper = new Helper();
+      thisGraph.optionalGroups = [];
+      /*This value will be appended to select ids
+        in prerequisite forms
+      */
+
+      thisGraph.state = {
+        selectedNodes: [],
+        selectedEdges: [],
+        mouseDownNode: null,
+        mouseDownLink: null,
+        draggableSelection: false,
+        selectionDragged: false,
+        justDragged: false,
+        justScaleTransGraph: false,
+        lastKeyDown: -1,
+        shiftNodeDrag: false,
+        selectedText: null
+      };
+
+      thisGraph.menu = [
+        {
+          title: 'Delete Selected Nodes',
+          action: function(elm, d, i){
+            thisGraph.contextMenuDeleteNodes.call(thisGraph);
+          }
+        },
+        {
+          title: 'Delete Selected Paths',
+          action: function(elm, d, i){
+            thisGraph.contextMenuDeletePaths.call(thisGraph);
+          }
+        },
+        {
+          title: 'Group Selected Paths',
+          action: function(elm, d, i){
+            thisGraph.contextMenuGroupPaths.call(thisGraph);
+          }
+        }
+      ]
+
+      // define arrow markers for graph links
+      var defs = svg.append('svg:defs');
+      defs.append('svg:marker')
+        .attr('id', 'end-arrow')
+        .attr('viewBox', '0 -5 10 10')
+        .attr('refX', "32")
+        .attr('markerWidth', 3.5)
+        .attr('markerHeight', 3.5)
+        .attr('orient', 'auto')
+        .append('svg:path')
+        .attr('d', 'M0,-5L10,0L0,5');
+
+      // define arrow markers for leading arrow
+      defs.append('svg:marker')
+        .attr('id', 'mark-end-arrow')
+        .attr('viewBox', '0 -5 10 10')
+        .attr('refX', 7)
+        .attr('markerWidth', 3.5)
+        .attr('markerHeight', 3.5)
+        .attr('orient', 'auto')
+        .append('svg:path')
+        .attr('d', 'M0,-5L10,0L0,5');
+
+      defs.append('svg:marker')
+        .attr('id', 'recommended-start-arrow')
+        .attr('viewBox', '-5 -5 10 10')
+        .attr('refX', "-29")
+        .attr('markerWidth', 3.5)
+        .attr('markerHeight', 3.5)
+        .attr('orient', 'auto')
+        .append('svg:path')
+        .attr('d', 'M 0,0 m -5,-5 L 5,-5 L 5,5 L -5,5 Z');
+
+      defs.append('svg:marker')
+        .attr('id', 'coreq-start-arrow')
+        .attr('viewBox', '-6 -6 12 12')
+        .attr('refX', "-33")
+        .attr('markerWidth', 3.5)
+        .attr('markerHeight', 3.5)
+        .attr('orient', 'auto')
+        .append('svg:path')
+        .attr('d', 'M 0, 0  m -5, 0  a 5,5 0 1,0 10,0  a 5,5 0 1,0 -10,0')
+        .style("stroke-width", 1)
+        .style("fill", "#fff")
+        .style("stroke", "#333");
+
+      defs.append('svg:marker')
+        .attr('id', 'strict-coreq-start-arrow')
+        .attr('viewBox', '-6 -6 12 12')
+        .attr('refX', "-33")
+        .attr('markerWidth', 3.5)
+        .attr('markerHeight', 3.5)
+        .attr('orient', 'auto')
+        .append('svg:path')
+        .attr('d', 'M 0, 0  m -5, 0  a 5,5 0 1,0 10,0  a 5,5 0 1,0 -10,0');
+
+      thisGraph.svg = svg;
+      thisGraph.svgG = svg.append("g")
+            .classed(thisGraph.consts.graphClass, true);
+      var svgG = thisGraph.svgG;
+
+      thisGraph.svgWidth = parseInt(d3.select(parentId + ' svg').attr("width"));
+      thisGraph.svgHeight = parseInt(d3.select(parentId + ' svg').attr("height"));
+      thisGraph.yearDividers = [{},{},{}];
+      var divisionWidth = thisGraph.svgWidth / 4;
+      for(var i = 0; i < 3;i++){
+        thisGraph.yearDividers[i].x1 = divisionWidth * (i + 1);
+        thisGraph.yearDividers[i].x2 = thisGraph.yearDividers[i].x1;
+        thisGraph.yearDividers[i].y1 = 0;
+        thisGraph.yearDividers[i].y2 = thisGraph.svgHeight;
+      }
+      thisGraph.dividers = svg.selectAll("line")
+        .data(thisGraph.yearDividers);
+
+      thisGraph.dividers.enter()
+        .append("line")
+        .attr("x1", function(d){ return d.x1; })
+        .attr("x2", function(d){ return d.x2; })
+        .attr("y1", function(d){ return d.y1; })
+        .attr("y2", function(d){ return d.y2; })
+        .style("stroke", "#000")
+        .style("stroke-dasharray", (10, 10));
+
+      var years = [{},{},{},{}];
+
+      for(var i = 0; i < 4; i++){
+        if(i === 1 || i === 2)
+          years[i].x = (thisGraph.yearDividers[i].x1 + thisGraph.yearDividers[i - 1].x1) / 2;
+        else if(i === 0)
+          years[i].x = divisionWidth / 2;
+        else if(i == 3)
+          years[i].x = thisGraph.svgWidth - (divisionWidth / 2);
+
+        years[i].y = 20;
+        years[i].text = "Year " + (i+1);
+      }
+
+      thisGraph.yearLabels = svg.selectAll("text.yearLabels")
+        .data(years);
+
+      thisGraph.yearLabels.enter()
+        .append("text")
+        .classed("yearLabels", true)
+        .attr("x", function(d, i){ return d.x - 21.5})
+        .attr("y", function(d){ return d.y })
+        .text(function(d){ return d.text });
+
+      // displayed when dragging between nodes
+      thisGraph.dragLine = svgG.append('svg:path')
+            .attr('width', '100%')
+            .attr('height', '100%')
+            .attr('class', 'PREREQ dragline hidden')
+            .attr('d', 'M0,0L0,0')
+            .style('marker-end', 'url(#mark-end-arrow)');
+
+      // svg nodes and edges 
+      thisGraph.paths = svgG.append("g").selectAll("g");
+      thisGraph.circles = svgG.append("g").selectAll("g");
+
+      thisGraph.drag = d3.behavior.drag()
+        .origin(function(d){
+          return {x: d.x, y: d.y};
+        })
+        .on("drag", function(d){
+          //CHANGED: justDragged = true was commented out
+          //thisGraph.state.justDragged = true;
+          thisGraph.dragmove.call(thisGraph, d,this);
+        })
+        .on("dragend", function() {
+          thisGraph.dragLine.classed("hidden", true);
+          // todo check if edge-mode is selected
+        });
+
+      // listen for key events
+      d3.select(window).on("keydown", function(){
+        thisGraph.svgKeyDown.call(thisGraph);
+      })
+      .on("keyup", function(){
+        thisGraph.svgKeyUp.call(thisGraph);
+      });
+      //Listen for right click to open context menu
+      svg.on('contextmenu', d3.contextMenu(thisGraph.menu));
+
+      svg.on("mousedown", function(){
+        if(d3.event.button !== 0) return false;
+        thisGraph.svgMouseDown.call(thisGraph, svg, this);
+      });
+      svg.on("mousemove", function(d){
+        if(d3.event.button !== 0) return false;
+        thisGraph.svgMouseMove.call(thisGraph, svg, this);
+      });
+      svg.on("mouseup", function(d){
+        if(d3.event.button !== 0) return false;
+        thisGraph.svgMouseUp.call(thisGraph, svg,this);
+      });
+
+      // listen for dragging
+      var dragSvg = d3.behavior.zoom()
+            .on("zoom", function(){
+              if (d3.event.sourceEvent.shiftKey){
+                // TODO  the internal d3 state is still changing
+                return false;
+              } else{
+                //thisGraph.zoomed.call(thisGraph);
+              }
+              return true;
+            })
+            .on("zoomstart", function(){
+              var ael = d3.select("#" + thisGraph.consts.activeEditId).node();
+              if (ael){
+                ael.blur();
+              }
+              if (!d3.event.sourceEvent.shiftKey) d3.select('body').style("cursor", "move");
+            })
+            .on("zoomend", function(){
+              d3.select('body').style("cursor", "auto");
+            });
+      
+      svg.call(dragSvg).on("dblclick.zoom", null);
+
+      // listen for resize
+      window.onresize = function(){thisGraph.updateWindow.call(thisGraph,svg);};
+
+      // handle download data
+      d3.select("#download-input").on("click", function(){
+        $("#download_div").slideToggle();
+      });
+
+      d3.select('#download_course_info').on("click", function(){
+        var years = 4;
+        var headers = ["Course","Fall Offerings","Fall Avg Size","Winter Offerings","Winter Avg Size",
+          "Spring Offerings","Spring Avg Size","Summer Sessoin 1 Offerings","Summer Session 1 Avg Size",
+          "Summer Session 2 Offerings", "Summer Session 2 Avg Size", "Special Summer Session Offerings",
+          "Special Summer Session Avg Size", "Extra Session Offerings", "Extra Session Avg Size",
+          "Summer Quarter Offerings","Summer Quarter Avg Size","Min Prior Quarters","Number Dependent Courses"];
+        var adjList = {'directed':{}, 'reversed':{}}
+        var courseInfo = [headers];
+        var terms = ['fall', 'winter','spring','summer1', 'summer2','summer_special','summer_extra', 'summer_quarter'];
+
+        thisGraph.nodes.forEach(function(d){
+          var id = d.id.toString();
+          adjList['directed'][id] = [];
+          adjList['reversed'][id] = [];
+        });
+
+        thisGraph.edges.forEach(function(edge){
+          var sourceIdStr = edge.source.id.toString(),
+            targetIdStr = edge.target.id.toString();
+
+          adjList['directed'][sourceIdStr].push(targetIdStr);
+          adjList['reversed'][targetIdStr].push(sourceIdStr);
+        });
+
+        thisGraph.nodes.forEach(function(d){
+          var history = thisGraph.getCourseHistory.call(thisGraph, d),
+            course = d.course, thisCourse = [d.title];
+          var termMap = history.term_map;
+
+          terms.forEach(function(term){
+            thisCourse.push(history.offerings[term] + ' out of ' + years);
+            thisCourse.push(Math.round(history.size[term]/history.offerings[term]));
+          });
+
+          var minPriorQuarters = thisGraph.minimumPriorQuarters.call(thisGraph,d,adjList['reversed']);
+          thisCourse.push(minPriorQuarters);  
+
+          var numDependentCourses = thisGraph.BFS(adjList['directed'],d);
+          thisCourse.push(numDependentCourses);
+          courseInfo.push(thisCourse);
+        });
+
+        var dataString = '', csvContent = '';
+        courseInfo.forEach(function(infoArray, index){
+          dataString = infoArray.join(",");
+          csvContent += index < courseInfo.length ? dataString+ "\n" : dataString;
+        }); 
+
+        var blob = new Blob([csvContent]);
+        var filename = prompt("Please enter the name of the file you want to save to (will save with .csv extension)");
+
+        if(filename === "" || (filename !== null && filename.trim() === ""))
+          alert('Filename cannot be blank');
+        else if(filename && filename !== "null")
+          saveAs(blob, filename+".csv");
+
+        $("#download_div").slideToggle();
+      });
+
+      d3.select('#download_graph').on("click", function(){
+        var saveEdges = [];
+        var saveNodes = [];
+        var optionalGroups = [];
+
+
+        $("#download_div").slideToggle();
+        thisGraph.edges.forEach(function(val, i){
+          saveEdges.push(val.toJson());
+        });
+
+        thisGraph.nodes.forEach(function(val,i){
+          saveNodes.push(val.toJson());
+        });
+
+        optionalGroups = thisGraph.optionalGroups;
+
+        var blob = new Blob([window.JSON.stringify({"width": thisGraph.svgWidth, "height": thisGraph.svgHeight, "nodes": saveNodes, "edges": saveEdges, "optionalGroups": optionalGroups})], {type: "text/plain;charset=utf-8"});
+        var filename = prompt("Please enter the name of the file you want to save to (will save with .json extension)");
+
+        if(filename === "" || (filename !== null && filename.trim() === ""))
+          alert('Filename cannot be blank');
+        else if(filename && filename !== "null")
+          saveAs(blob, filename+".json");
+      });
+
+
+      // handle uploaded data
+      d3.select("#upload-input").on("click", function(){
+        document.getElementById("hidden-file-upload").click();
+      });
+
+      d3.select("#hidden-file-upload").on("change", function(){
+        if (window.File && window.FileReader && window.FileList && window.Blob) {
+          var uploadFile = this.files[0];
+          var filereader = new window.FileReader();
+          
+          filereader.onload = function(){
+            var txtRes = filereader.result;
+            // TODO better error handling
+            try{
+              var jsonObj = JSON.parse(txtRes);
+              thisGraph.deleteGraph(true);
+
+              thisGraph.nodes = [];
+              var width = jsonObj.width;
+              var height = jsonObj.height;
+
+              jsonObj.nodes.forEach(function(node, i){
+                node.x *= (thisGraph.svgWidth / width);
+                node.y *= (thisGraph.svgHeight / height);
+                thisGraph.nodes[i] = Node.prototype.fromJson(node);
+              })
+
+              var max = (function(){
+                var max = 0;
+                for(var i = 0; i < thisGraph.nodes.length; i++)
+                  if(max < thisGraph.nodes[i].id)
+                    max = thisGraph.nodes[i].id;
+                return max;
+              })();
+
+              thisGraph.setIdCt(max + 1);
+              var newEdges = [];
+              var tempEdges = jsonObj.edges;
+              tempEdges.forEach(function(e, i){
+                newEdges[i] = new Edge(thisGraph.nodes.filter(function(n){return n.id === e.source.id;})[0],
+                                thisGraph.nodes.filter(function(n){return n.id === e.target.id;})[0],
+                                e.type,e.group,e.optional);
+              });
+              thisGraph.optionalGroups = jsonObj.optionalGroups;
+              thisGraph.edges = newEdges;
+              thisGraph.updateGraph();
+            }catch(err){
+              window.alert("Error parsing uploaded file\nerror message: " + err.message);
+              return;
+            }
+          };
+          filereader.readAsText(uploadFile);    
+        } else {
+          alert("Your browser won't let you save this graph -- try upgrading your browser to IE 10+ or Chrome or Firefox.");
+        }
+      });
+
+      // handle delete graph
+      d3.select("#delete-graph").on("click", function(){
+        thisGraph.deleteGraph(false);
+      });
+    };
+
+    return my;
+  })(MODULE || {})

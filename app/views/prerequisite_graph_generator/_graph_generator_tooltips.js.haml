@@ -1,0 +1,193 @@
+:javascript
+  var MODULE = (function(my){
+    my.GraphCreator.prototype.createCourseSelect = function(d3node, d) {
+      var thisGraph = this,
+        node = d;
+      thisGraph.generateTooltipDiv(thisGraph.generateNodeFormHtml, "courseTooltip", d,d3node);
+    }
+
+    my.GraphCreator.prototype.generateEdgeTooltipHtml = function(thisGraph){
+      return ('<h3>Relationship Type</h3>' +
+        '<select id="tooltip_select" style="width: 100%">'+
+          '<option value="PREREQ">Prerequisite</option>' +
+          '<option value="COREQ">May be taken concurrently</option>' +
+          '<option value="COREQ_STRICT">Must be taken concurrently</option>' +
+          '<option value="RECOMMENDED">Recommended</option>' +
+        '</select>' +
+        '<button style="width: 49%; margin-top: 5px; margin-right: 1%" id="change_edge">Enter</button>'+
+        '<button style="width: 49%; margin-top: 5px; margin-left: 1%" id="remove_tooltip">Cancel</button>'
+      );
+    }
+
+    my.GraphCreator.prototype.generateNodeFormHtml = function(thisGraph){
+      return (
+        '<h3>Course Subject Code</h3>' +
+        '<select id="course_subj_code_select" style="width: 100%">'+
+          '<option></option>'+
+          thisGraph.courseSubjectCodes() +
+        '</select>' +
+        '<h3>Course Number</h3>' +
+        '<select id="course_num_select" style="width: 100%">'+
+        '</select>' +
+        '<button style="margin-top: 5px; width: 100%" id="change_requirements">Set Prerequisites</button>'+
+        '<button style="width: 49%; margin-top: 5px; margin-right: 1%" id="change_course">Enter</button>'+
+        '<button style="width: 49%; margin-left: 1%; margin-top: 5px" id="remove_tooltip">Cancel</button>'
+      );
+    }
+
+    my.GraphCreator.prototype.generateTooltipDiv = function(callback,css_class,targetObject,d3el){
+      var thisGraph = this;
+
+      if(thisGraph.tooltipDiv == null){
+        thisGraph.deleteForm = false;
+        if(targetObject.source){
+          if(!($("#smallipop_form").length)){
+            var left = d3.event.pageX;
+            var top = d3.event.pageY;
+
+            var div = '<div id="smallipop_form" style="position: absolute; z-index: -1; height: 1px; width: 1px; left: '+left+'px; top: '+top+'px"></div>';
+            $('body').append(div); 
+
+
+            $("#smallipop_form").smallipop({
+              triggerOnClick: true,
+              hideOnPopupClick: false,
+              hideOnTriggerClick: false,
+              onBeforeHide: function() { return thisGraph.deleteForm },
+              onAfterShow: function() {
+                $("#tooltip_select").select2();
+
+                $("#change_edge").on("click", function(d){
+                  thisGraph.updatePathType.call(thisGraph, d3.select(this), targetObject);
+                });
+
+                $("#remove_tooltip").on("click", function(d){
+                  thisGraph.removeTooltip.call(thisGraph, d3.select(this), d, targetObject);
+                });
+              },
+              onAfterHide: function() { 
+                $("#smallipop_form").remove();
+                thisGraph.tooltipDiv = null;
+             }            
+            },callback(thisGraph));
+            $("#smallipop_form").smallipop('show');
+            $('.smallipop-instance').css('max-width','250px');
+          }
+          thisGraph.tooltipEdge = d3.event.target;
+          
+        } else {
+          if(!($("#smallipop_form").length)/* && thisGraph.state.mouseDownNode === null*/){
+            var radius = thisGraph.nodeRadius;
+            var left = d3.event.pageX - radius*thisGraph.scale;
+            var top = d3.event.pageY - radius*thisGraph.scale;
+            $('body').append('<div id="smallipop_form" style="z-index: -1; width: '+Math.ceil(thisGraph.scale*2*radius)+'px; height: '+Math.ceil(thisGraph.scale*2*radius)+'px; position: absolute; left:'+left+'px; top:'+top+'px"></div>');
+            $("#smallipop_form").smallipop({ 
+              triggerOnClick: true,
+              hideOnPopupClick: false,
+              hideOnTriggerClick: false,
+              onBeforeHide: function() { return thisGraph.deleteForm },
+              onAfterShow: function() {
+                thisGraph.initializeCourseForm.call(thisGraph,d3el,targetObject);
+                $("#remove_tooltip").on("click", function(d){
+                  thisGraph.removeTooltip.call(thisGraph, d3.select(this), d, targetObject);
+                });
+              },
+              onAfterHide: function() { 
+                $("#smallipop_form").remove();
+                thisGraph.tooltipDiv = null;
+             }   
+            },callback(thisGraph));  
+            $("#smallipop_form").smallipop('show');
+            $('.smallipop-instance').css('max-width','250px');
+          }          
+        }
+
+        thisGraph.tooltipDiv = div;
+      }
+      //end change
+    }
+
+    my.GraphCreator.prototype.removeTooltip = function(d3path, d, targetObject) {
+      var thisGraph = this;
+
+      if(thisGraph.prereqContainer.prereqs.length > 0){
+        if(window.confirm('All prerequisite data will be lost if you do not save.  Close anyways?')){
+          thisGraph.clearPrereqContianer();
+          thisGraph.deleteForm = true;
+          $("#smallipop_form").smallipop('hide');
+          $("#smallipop_form").remove();
+        }else
+          return false;
+      } else {
+        thisGraph.deleteForm = true;
+        $("#smallipop_form").smallipop('hide');
+        $('#smallipop_form').remove();
+
+        if(targetObject.course && targetObject.course.course_subj_code === null){
+          thisGraph.nodes.splice(thisGraph.findNodeIndex(targetObject),1);
+          thisGraph.updateGraph();
+        }
+      }
+
+      thisGraph.tooltipDiv = null;
+      thisGraph.tooltipEdge = null;
+      thisGraph.tooltipNode = null;
+    }
+
+    my.GraphCreator.prototype.updateCourseNumSelect = function(d3path, d, id) {
+      var thisGraph = this,
+        options_str = '<option></option>',
+        id_concat = (id !== undefined) ? ('_'+id) : '',
+        subj_code = $("#course_subj_code_select"+id_concat).val(),
+        new_options = course_data[subj_code];
+
+      //Clear old options
+      $("#course_num_select"+id_concat).html('');
+
+      //Add new options
+      for(var course_num in new_options){
+        options_str += '<option value="'+course_num+'">'+course_num+': '+new_options[course_num]["ctitle"]+'</option>';
+      }
+
+      $("#course_num_select"+id_concat).html(options_str);
+      $("#course_num_select"+id_concat).change();
+    }
+
+    my.GraphCreator.prototype.updateNodeCourse = function(d3node, d) {
+      var thisGraph = this, idx;      
+      var course_subj_code = $("#course_subj_code_select").val(),
+        course_num = $("#course_num_select").val(),
+        units = course_data[course_subj_code][course_num]['units'],
+        ctitle = course_data[course_subj_code][course_num]['ctitle'];
+
+      //Find node to be updated
+      for(idx = 0; idx < thisGraph.nodes.length; idx++) {
+        if(thisGraph.nodes[idx].id === d.id)
+          break;
+      }
+
+      //If new prereqs were saved, update prereqs
+      if(thisGraph.prereqContainer.node && thisGraph.isValidPrereqs(course_subj_code,course_num)){
+        thisGraph.setPrerequisites.call(thisGraph);
+      } else if(thisGraph.prereqContainer.node && !thisGraph.isValidPrereqs(course_subj_code,course_num))
+        return false;
+
+      //Update node with new course info
+      thisGraph.nodes[idx].updateCourseInfo(course_subj_code,course_num,ctitle,units);
+
+      d3node.selectAll('text').remove();
+      d3node.title = thisGraph.nodes[idx].title;
+      thisGraph.insertTitleLinebreaks(d3node, thisGraph.nodes[idx].title);
+
+      //Remove tooltip
+      thisGraph.tooltipDiv = null;
+      thisGraph.tooltipNode = null;
+      thisGraph.deleteForm = true;
+      $("#smallipop_form").smallipop('hide');
+      $("#smallipop_form").remove();
+
+      return true;
+    }
+    
+    return my;
+  })(MODULE || {});

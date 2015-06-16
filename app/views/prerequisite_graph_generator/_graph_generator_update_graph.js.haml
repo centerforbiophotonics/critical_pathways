@@ -1,0 +1,206 @@
+:javascript
+  var MODULE = (function(my){
+    // call to propagate changes to graph
+    my.GraphCreator.prototype.updateGraph = function(){
+      
+      var thisGraph = this, 
+          consts = thisGraph.consts,
+          state = thisGraph.state;
+      
+
+      thisGraph.removeOldGroups();
+      thisGraph.setGroupColors();
+
+      thisGraph.paths = thisGraph.paths.data(thisGraph.edges, function(d){
+        return String(d.source.id) + "+" + String(d.target.id);
+      });
+      var paths = thisGraph.paths;
+      // update existing paths
+      paths.style('marker-end', 'url(#end-arrow)')
+        //.style('marker-start', 'url(#start-arrow)')
+        .classed(consts.selectedClass, function(d){
+          return state.selectedEdges.filter(function(e){ e === d }).length;
+        })
+        .classed("PREREQ", function(d){ return d.type === RelationshipType.PREREQ })
+        .classed("COREQ", function(d) { return d.type === RelationshipType.COREQ})
+        .classed("COREQ_STRICT", function(d){ return d.type === RelationshipType.COREQ_STRICT})
+        .classed("RECOMMENDED", function(d){ return d.type === RelationshipType.RECOMMENDED})
+        .classed("optional", function(d){ return d.optional })
+        .style('stroke', function(d){
+          return d.optional ? thisGraph.colorScale[thisGraph.optionalGroups.indexOf(d.group)] : '#333';
+        })
+        .attr("d", function(d){
+          return "M" + d.source.x + "," + d.source.y + "L" + d.target.x + "," + d.target.y;
+        });
+
+      // add new paths
+      paths.enter()
+        .append("path")
+        .style('marker-end','url(#end-arrow)')
+        .classed("edge", true)
+        .classed("PREREQ", function(d){ return d.type === RelationshipType.PREREQ })
+        .classed("COREQ", function(d) { return d.type === RelationshipType.COREQ})
+        .classed("COREQ_STRICT", function(d){ return d.type === RelationshipType.COREQ_STRICT})
+        .classed("RECOMMENDED", function(d){ return d.type === RelationshipType.RECOMMENDED})
+        .classed("optional", function(d){ return d.optional })
+        .attr("d", function(d){
+          return "M" + d.source.x + "," + d.source.y + "L" + d.target.x + "," + d.target.y;
+        })
+        .on("mousedown", function(d){
+          if(d3.event.button !== 0) return false;
+          thisGraph.pathMouseDown.call(thisGraph, d3.select(this), d);
+        })
+        .on("mouseup", function(d){
+          if(d3.event.button !== 0) return false;
+          state.mouseDownLink = null;
+        });
+
+      paths.style('stroke', function(d){
+          return d.optional ? thisGraph.colorScale[thisGraph.optionalGroups.indexOf(d.group)] : '#333';
+        })
+
+      paths.attr("id", function(d){
+        return "path_"+d.source.id+"_"+d.target.id;
+      });
+
+      // remove old links
+      paths.exit().remove();
+      
+      // update existing nodes
+      thisGraph.circles = thisGraph.circles.data(thisGraph.nodes, function(d){ return d.id;});
+      thisGraph.circles.attr("transform", function(d){return "translate(" + d.x + "," + d.y + ")";})
+      thisGraph.svgG.selectAll('circle').attr("r", thisGraph.nodeRadius);
+      thisGraph.svg.select('defs #end-arrow').attr('refX', 32 - (50 - thisGraph.nodeRadius)/2);
+      thisGraph.svg.select('defs #recommended-start-arrow').attr('refX', -29 + (50 - thisGraph.nodeRadius)/2);
+      thisGraph.svg.select('defs #coreq-start-arrow').attr('refX', -33 + (50 - thisGraph.nodeRadius)/2);
+      thisGraph.svg.select('defs #strict-coreq-start-arrow').attr('refX', -33 + (50 - thisGraph.nodeRadius)/2);
+
+      // add new nodes
+      var newGs= thisGraph.circles.enter()
+            .append("g");
+
+      newGs.classed(consts.circleGClass, true)
+        .attr("transform", function(d){return "translate(" + d.x + "," + d.y + ")";})
+        .attr("id",function(d){ return "node"+d.id})
+        .on("mouseover", function(d){     
+          if(!($("#smallipop_form").length) && !($("#node"+d.id+"div").length) && thisGraph.state.mouseDownNode === null){
+            var radius = thisGraph.nodeRadius,
+              top = d3.event.pageY - radius*thisGraph.scale,
+              left = d3.event.pageX - radius*thisGraph.scale,
+              divSize = Math.ceil(2*radius*thisGraph.scale);
+
+            $('body').append('<div id="node'+d.id+'div" style="z-index: -1; width: '+divSize+'px; height: '+divSize+'px; position: absolute; left:'+left+'px; top:'+top+'px"></div>');
+            $("#node"+d.id+"div").smallipop({},thisGraph.nodeInfo(d));  
+          } 
+
+          if(!($("#smallipop_form").length) && $("#node"+d.id+"div").length){
+            $("#node"+d.id+"div").smallipop('show'); 
+            $('.smallipop-instance').css('max-width','400px');
+          }
+
+          if (state.shiftNodeDrag){
+            d3.select(this).classed(consts.connectClass, true);
+          }
+        })
+        .on("mouseout", function(d){
+
+          if($("#node"+d.id+"div").length){
+            $("#node"+d.id+"div").smallipop('hide');  
+            $("#node"+d.id+"div").remove();
+          }
+
+          d3.select(this).classed(consts.connectClass, false);
+        })
+        .on("mousedown", function(d){
+          if(d3.event.button !== 0) return false;
+
+          if($("#node"+d.id+"div").length){
+            $("#node"+d.id+"div").smallipop('hide');  
+            $("#node"+d.id+"div").remove();
+          }
+          thisGraph.circleMouseDown.call(thisGraph, d3.select(this), d);
+        })
+        .on("mouseup", function(d){
+          if(d3.event.button !== 0) return false;
+          thisGraph.circleMouseUp.call(thisGraph, d3.select(this), d);
+        })
+        .call(thisGraph.drag);
+
+      newGs.append("circle")
+        .attr("r", String(thisGraph.nodeRadius));
+
+      newGs.each(function(d){
+        thisGraph.insertTitleLinebreaks(d3.select(this), d.title);
+      });
+
+      // remove old nodes
+      thisGraph.circles.exit().remove();
+    };
+
+    my.GraphCreator.prototype.updateDividers = function(x,y){
+      var thisGraph = this, divisionWidth = x / 4;
+
+      for(var i = 0; i < 3;i++){
+        thisGraph.yearDividers[i].x1 = divisionWidth * (i + 1);
+        thisGraph.yearDividers[i].x2 = thisGraph.yearDividers[i].x1;
+        thisGraph.yearDividers[i].y1 = 0;
+        thisGraph.yearDividers[i].y2 = y;
+      }
+
+      thisGraph.dividers
+        .attr("x1", function(d){ return d.x1; })
+        .attr("x2", function(d){ return d.x2; })
+        .attr("y1", function(d){ return d.y1; })
+        .attr("y2", function(d){ return d.y2; });
+
+      var years = [{},{},{},{}];
+
+      for(var i = 0; i < 4; i++){
+        if(i === 1 || i === 2)
+          years[i].x = (thisGraph.yearDividers[i].x1 + thisGraph.yearDividers[i - 1].x1) / 2;
+        else if(i === 0)
+          years[i].x = divisionWidth / 2;
+        else if(i == 3)
+          years[i].x = x - (divisionWidth / 2);
+
+        years[i].y = 20;
+        years[i].text = "Year " + (i+1);
+      }
+
+      thisGraph.yearLabels = thisGraph.yearLabels.data(years);
+
+      thisGraph.yearLabels
+        .attr("x", function(d, i){ return d.x - 21.5})
+        .attr("y", function(d){ return d.y })
+        .text(function(d){ return d.text });
+    }
+
+    my.GraphCreator.prototype.updateWindow = function(svg){
+      var docEl = document.documentElement,
+          bodyEl = document.getElementsByTagName('body')[0];
+      var x = window.innerWidth || docEl.clientWidth || bodyEl.clientWidth;
+      var y = window.innerHeight|| docEl.clientHeight|| bodyEl.clientHeight;
+      svg.attr("width", x).attr("height", y);
+      this.updateDividers(x,y);
+
+      for(var i = 0; i < this.nodes.length;i++){
+        this.nodes[i].x *= (x / this.svgWidth);
+        this.nodes[i].y *= (y / this.svgHeight);
+      }
+
+      if($("#smallipop_form").length){
+        $("#smallipop_form").attr('width')
+      }
+
+      this.updateGraph();
+      this.svgHeight = y;
+      this.svgWidth = x;
+    };
+
+    my.GraphCreator.prototype.updateNodeRadius = function(radius){
+      this.nodeRadius = radius;
+      this.updateGraph();
+    }
+
+    return my;
+  })(MODULE || {});

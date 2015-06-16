@@ -1,0 +1,406 @@
+:javascript
+  var MODULE = (function(my){
+    my.GraphCreator.prototype.setIdCt = function(idct){
+      this.idct = idct;
+    };
+
+    my.GraphCreator.prototype.consts =  {
+      selectedClass: "selected",
+      connectClass: "connect-node",
+      circleGClass: "conceptG",
+      graphClass: "graph",
+      activeEditId: "active-editing",
+      BACKSPACE_KEY: 8,
+      DELETE_KEY: 46,
+      ENTER_KEY: 13,
+      SHIFT_KEY: 16
+    };
+
+    my.GraphCreator.prototype.deleteGraph = function(skipPrompt){
+      var thisGraph = this,
+          doDelete = true;
+      if (!skipPrompt){
+        doDelete = window.confirm("Press OK to delete this graph");
+      }
+      if(doDelete){
+        thisGraph.setIdCt(0);
+        thisGraph.edgeGrp = 0;
+        thisGraph.colorScale = [];
+        thisGraph.optionalGroups = [];
+        thisGraph.nodes = [];
+        thisGraph.edges = [];
+        thisGraph.updateGraph();
+      }
+    };
+
+    my.GraphCreator.prototype.courseSubjectCodes = function() {
+      var select_html = '';
+      var first = false;
+
+      for(var subj_code in course_data){
+        select_html += '<option value="'+subj_code+'" '+(first ? 'selected' : '')+'>'+subj_code+'</option>';
+
+        if(first)
+          first = false;
+      }
+
+      return select_html;
+    }
+
+    my.GraphCreator.prototype.isValidPrereqs = function(course_subj_code,course_num) {
+      var thisGraph = this;
+
+      for(var i in thisGraph.prereqContainer.prereqs)
+        for(var j in thisGraph.prereqContainer.prereqs[i]){
+          var thisPrereq = thisGraph.prereqContainer.prereqs[i][j];
+          if(course_subj_code === thisPrereq.course_subj_code && course_num === thisPrereq.course_num){
+            alert('A course cannot be a prerequisite for itself');
+            return false;
+          }
+        }
+
+      return true;
+    }
+
+    my.GraphCreator.prototype.parseClasses = function(c) {
+      for(var i in c)
+        if(c[i] == "PREREQ" || c[i] == "COREQ" || c[i] == "COREQ_STRICT" || c[i] == "RECOMMENDED")
+          return c[i];
+
+      return null;
+    }
+
+    my.GraphCreator.prototype.updateCourseRequirements = function(idx,reqType,groupLength) {
+      var thisGraph = this;
+
+      thisGraph.edges[idx].target.course.requirements.forEach(function(req,i){
+        if(thisGraph.helper.isArray(req)){
+          req.forEach(function(r,j){ 
+            if(r.node === thisGraph.edges[idx].source)
+              thisGraph.edges[idx].target.course.requirements[i][j].requirement_type = reqType;
+          });
+        }else if(req.node === thisGraph.edges[idx].source) {
+          thisGraph.edges[idx].target.course.requirements[i].requirement_type = reqType;
+        }
+      })
+    }
+
+    my.GraphCreator.prototype.setPrereqContainer = function(node,prereqs){
+      this.prereqContainer.node = node;
+      this.prereqContainer.prereqs = prereqs;
+    }
+
+    my.GraphCreator.prototype.clearPrereqContianer = function(){
+      this.prereqContainer.node = null;
+      this.prereqContainer.prereqs = [];
+    }
+
+    my.GraphCreator.prototype.setPrerequisites = function() {
+      var thisGraph = this,
+        node = thisGraph.prereqContainer.node,
+        prereqs = thisGraph.prereqContainer.prereqs,
+        idx = thisGraph.findNodeIndex(node),
+        optionGroup = [], currentNode,
+        group, prereqIdx = 0;
+
+
+      thisGraph.removeEdges();
+      //Get all nodes to the left of the node
+      var leftNodes = thisGraph.nodes.filter(function(d){ return d.x <= node.x });
+      prereqs.forEach(function(prereq_list, listIdx){
+        optionGroup = [];
+        group = null;
+        if(prereq_list.length !== 0){
+          prereq_list.forEach(function(prereq, optIdx){
+            var course_found = false;
+            for(var i in thisGraph.nodes){
+              currentNode = thisGraph.nodes[i];
+              if(currentNode.course.isSameCourse(prereq.course_subj_code,prereq.course_num)){
+                course_found = true;
+                var edgeIndex = thisGraph.findEdgeIndex(currentNode,node);
+
+                //An edge between these nodes already exists
+                if(edgeIndex !== -1){
+                  thisGraph.edges[edgeIndex].type = prereq.requirement_type;
+                  optionGroup.push(thisGraph.edges[edgeIndex]);
+
+                  if(optIdx === 0) 
+                    group = thisGraph.edges[edgeIndex].group;
+
+                  thisGraph.updateCourseRequirements(edgeIndex,prereq.requirement_type,prereq_list.length);
+                  thisGraph.updateGraph();
+                }else {
+                  //Source node already exists, create new edge
+                  var thisEdge = thisGraph.createEdge(currentNode,node,prereq.requirement_type,group);
+                  optionGroup.push(thisEdge);
+
+                  if(optIdx === 0) 
+                    group = thisEdge.group;
+
+                  thisGraph.addNewPrereq(idx,currentNode,prereq.requirement_type,prereq_list,prereqIdx,optIdx);
+                }
+                break;
+              }
+            }
+            if(!course_found){
+              var coords = thisGraph.findSpaceForNode(node, leftNodes);
+              var d = new Node(thisGraph.idct++,coords[0],coords[1],prereq);
+              thisGraph.addNewPrereq(idx,d,prereq.requirement_type,prereq_list,prereqIdx,optIdx);
+
+              //Add this to the list of nodes we need to avoid when placing new nodes
+              leftNodes.push(d);
+              thisGraph.nodes.push(d);
+              thisGraph.updateGraph();
+
+              //Add new edge
+              var thisEdge = thisGraph.createEdge(d,node,prereq.requirement_type, group);
+              optionGroup.push(thisEdge);
+              if(optIdx === 0){ 
+                group = thisEdge.group;
+              }
+            }
+          })
+        prereqIdx++;
+        }
+        if(optionGroup.length > 1) thisGraph.setEdgeGroup(optionGroup, node);
+      })
+
+      thisGraph.updateGraph();
+      thisGraph.clearPrereqContianer();
+    }
+
+    my.GraphCreator.prototype.addNewPrereq = function(idx, prereqNode,reqType,prereq_list,listIdx,optIdx) {
+      var thisGraph = this;
+      var newPrereq = {node: prereqNode, requirement_type: reqType};
+
+      //Build list of prereqs for this course
+      if(prereq_list.length > 1 && optIdx === 0)
+        thisGraph.nodes[idx].course.requirements[listIdx] = [newPrereq];
+      else if(prereq_list.length > 1){
+        try { thisGraph.nodes[idx].course.requirements[listIdx].push(newPrereq) }
+        catch(e){
+          thisGraph.nodes[idx].course.requirements[listIdx] = [thisGraph.nodes[idx].course.requirements[listIdx],newPrereq];
+        }
+      }
+      else
+        thisGraph.nodes[idx].course.requirements[listIdx] = newPrereq;
+    }
+
+    my.GraphCreator.prototype.initializeCourseForm = function(d3node,d) {
+        var thisGraph = this,
+          node = d;
+
+     //Register handlers
+     $("#course_num_select").on("change", function(d){
+        $("#change_course").focus();
+     });
+
+      $("#course_subj_code_select").off("change", changeSubjCode).on("change", changeSubjCode);
+
+      function changeSubjCode(d){
+        thisGraph.updateCourseNumSelect.call(thisGraph, d3.select(this), node);
+        $("#course_num_select").select2('open');
+      }
+
+      $("#change_course").on("click", function(d){
+        var courseUpdated = thisGraph.updateNodeCourse.call(thisGraph, d3node, node); 
+
+        return courseUpdated;
+      }) 
+
+      $("#change_requirements").on("click", function(d){
+        thisGraph.prereqForm = new PrereqForm(thisGraph.setPrereqContainer, thisGraph, node, d3node);
+        $(".smallipop-instance").css('z-index', '1');
+        thisGraph.prereqForm.setCourseRequirements();
+      })
+
+      function alphabetical(a, b) {
+        var A = a.text.toLowerCase().split('');
+        var B = b.text.toLowerCase().split('');
+        var len = Math.min(A.length, B.length);
+
+        for(var i = 0; i < len; i++){
+          if(A[i] < B[i])
+            return -1;
+          else if (A[i] > B[i])
+            return 1;
+        }
+        if(A.length < B.length)
+          return -1;
+        else if(A.length > B.length)
+          return 1;
+
+        return 0;
+      }
+
+      $("#course_subj_code_select").select2({ 
+        width: 'style', 
+        placeholder: 'Subject Code',
+        sortResults: function(results) {
+          return results.sort(alphabetical);
+        }
+      });
+
+      $("#course_subj_code_select").select2('open');
+
+      $("#course_num_select").select2({ 
+        width: 'style', 
+        placeholder: 'Course Number',
+        sortResults: function(results) {
+          return results.sort(alphabetical);
+        }
+      });
+
+      //thisGraph.tooltipNode = d3.event.target;
+
+      if(d.course.course_subj_code !== null){
+        $("#course_subj_code_select").val(d.course.course_subj_code);
+        $("#course_subj_code_select").change();
+        $("#course_num_select").val(d.course.course_num.toString());
+        $("#course_num_select").change();
+      }else
+        thisGraph.updateCourseNumSelect.call(thisGraph);
+    }
+
+    my.GraphCreator.prototype.nodeInfo = function(d) {
+      var thisGraph = this;
+
+      return (
+        '<h3>'+d.title+': '+d.course.ctitle+'</h3>' +
+        '<a style="test-algin: left"><strong>Units</strong>: '+ d.course.units +'<br>'+
+        '<p style="text-align: left"><strong>Past Course Offerings</strong>: '+
+        '<br>' +
+        thisGraph.courseHistory(d) +
+        '</p>' +
+        '<p style="text-align: left"><strong>Prerequisites</strong>: '+
+        thisGraph.courseRequirements(d) +
+        '</p>'
+      )
+    }
+
+    my.GraphCreator.prototype.getCourseHistory = function(d) {
+      var thisGraph = this,
+        history = {
+          offerings: {'fall': 0, 'winter': 0,'spring': 0,'summer1': 0, 
+            'summer2': 0, 'summer_special': 0, 'summer_quarter': 0, 'summer_extra': 0},
+          size: {'fall': 0, 'winter': 0,'spring': 0,'summer': 0, 'summer1': 0,
+            'summer2': 0, 'summer_special': 0, 'summer_quarter': 0, 'summer_extra': 0},
+          term_map: {'10': 'fall', '01': 'winter', '03': 'spring', '05': 'summer1',
+            '07': 'summer2', '06': 'summer_special','08':'summer_quarter','04': 'summer_extra' }
+        },
+        summerYears = [],
+        course_terms = course_data[d.course.course_subj_code][d.course.course_num].terms_offered;
+      var termCodes = history.term_map;
+
+      for(var key in course_terms){
+        if(key >= "201103"){
+          var term = termCodes[key.substr(4)];
+          history.offerings[term]++;
+          history.size[term] += course_terms[key];
+        }
+      }
+
+      return history;
+    }
+
+    my.GraphCreator.prototype.courseHistory = function(d) {
+      var thisGraph = this,
+        history = thisGraph.getCourseHistory(d), outputHtml = '',
+        termNames = {'10': 'falls', '01': 'winters', '03': 'springs', '05': 'Summer Session 1s', '07': 'Summer Session 2s',
+          '06': 'Summer Special Sessions', '08': 'Summer Quarters', '04': 'Extra Sessions'};
+      var termMap = history.term_map;
+
+      for(var key in history.term_map){
+        outputHtml += history.offerings[termMap[key]] !== 0 ? (history.offerings[termMap[key]] + " of the last 4 " + 
+          termNames[key]+" (Avg. Enrollment: " + Math.round(history.size[termMap[key]] / history.offerings[termMap[key]]) + ")<br>") : '';
+      }
+      return outputHtml;
+    }
+
+    my.GraphCreator.prototype.courseRequirements = function(d) {
+      var thisGraph = this,
+        reqString = '';
+
+      d.course.requirements.forEach(function(req,i){
+        if(thisGraph.helper.isArray(req)){
+          req.forEach(function(r,j){
+            reqString += r.node.title;
+
+            switch (r.requirement_type) {
+              case RelationshipType.COREQ:
+                reqString += ' (may be taken concurrently)';
+                break;
+              case RelationshipType.COREQ_STRICT:
+                reqString += ' (must be taken concurrently)';
+                break;
+            }
+
+            if(j !== req.length - 1) 
+              reqString += ' or ';
+            else if(i !== d.course.requirements.length - 1)
+              reqString += ', ';
+          })
+        }else{
+          reqString += req.node.title;
+
+          switch (req.requirement_type) {
+            case RelationshipType.COREQ:
+              reqString += ' (may be taken concurrently)';
+              break;
+            case RelationshipType.COREQ_STRICT:
+              reqString += ' (must be taken concurrently)';
+              break;
+          }
+
+          if(i !== d.course.requirements.length - 1)
+            reqString += ', ';
+        }
+      })
+
+      return reqString === '' ? 'None' : reqString;
+    }
+
+    my.GraphCreator.prototype.deleteSelectedPaths = function(){
+      var thisGraph = this;
+      var state = thisGraph.state;
+      var selectedEdges = state.selectedEdges;
+
+      if(selectedEdges.length){
+        thisGraph.state.selectedEdges.forEach(function(edge){
+          var targetIdx = thisGraph.findNodeIndex(edge.target);
+          var reqIdx = edge.target.course.findRequirementIndex(edge.target.course.course_subj_code,
+            edge.target.course.course_num);
+
+          if(thisGraph.helper.isArray(reqIdx))
+            thisGraph.nodes[targetIdx].course.requirements[reqIdx[0]].splice(reqIdx[1],1);
+          else
+            thisGraph.nodes[targetIdx].course.requirements.splice(reqIdx,1);
+
+          thisGraph.edges.splice(thisGraph.edges.indexOf(edge), 1);
+        });
+
+        thisGraph.state.selectedEdges = [];
+        thisGraph.updateGraph();
+      }
+    }
+
+    my.GraphCreator.prototype.deleteSelectedNodes = function(){
+      var thisGraph = this;
+      var state = thisGraph.state;
+      var selectedNodes = state.selectedNodes;
+
+      d3.event.preventDefault();
+
+      if (selectedNodes.length && window.confirm('Are you sure you want to delete the selected courses?')){
+        selectedNodes.forEach(function(selectedNode){
+          thisGraph.nodes.splice(thisGraph.nodes.indexOf(selectedNode), 1);
+          thisGraph.spliceLinksForNode(selectedNode);
+        });
+
+        state.selectedNodes = [];
+        thisGraph.updateGraph();
+      }
+    }
+
+    return my;
+  })(MODULE || {});

@@ -14,6 +14,7 @@
       thisGraph.scale = 1.0;
       thisGraph.translate = [0,0];
       thisGraph.nodeRadius = 40;
+
       /*  We have added a course attribute to each node.
       *  This course object has the members 'course_subj_code' 
       * which is the course subject code as shown in course catalog, course_num,
@@ -52,7 +53,7 @@
 
       thisGraph.state = {
         selectedNodes: [],
-        selectedEdge: null,
+        selectedEdges: [],
         mouseDownNode: null,
         mouseDownLink: null,
         draggableSelection: false,
@@ -63,6 +64,27 @@
         shiftNodeDrag: false,
         selectedText: null
       };
+
+      thisGraph.menu = [
+        {
+          title: 'Delete Selected Nodes',
+          action: function(elm, d, i){
+            thisGraph.contextMenuDeleteNodes.call(thisGraph);
+          }
+        },
+        {
+          title: 'Delete Selected Paths',
+          action: function(elm, d, i){
+            thisGraph.contextMenuDeletePaths.call(thisGraph);
+          }
+        },
+        {
+          title: 'Group Selected Paths',
+          action: function(elm, d, i){
+            thisGraph.contextMenuGroupPaths.call(thisGraph);
+          }
+        }
+      ]
 
       // define arrow markers for graph links
       var defs = svg.append('svg:defs');
@@ -204,13 +226,21 @@
       .on("keyup", function(){
         thisGraph.svgKeyUp.call(thisGraph);
       });
+      //Listen for right click to open context menu
+      svg.on('contextmenu', d3.contextMenu(thisGraph.menu));
+
       svg.on("mousedown", function(){
+        if(d3.event.button !== 0) return false;
         thisGraph.svgMouseDown.call(thisGraph, svg, this);
       });
       svg.on("mousemove", function(d){
+        if(d3.event.button !== 0) return false;
         thisGraph.svgMouseMove.call(thisGraph, svg, this);
       });
-      svg.on("mouseup", function(d){thisGraph.svgMouseUp.call(thisGraph, svg,this);});
+      svg.on("mouseup", function(d){
+        if(d3.event.button !== 0) return false;
+        thisGraph.svgMouseUp.call(thisGraph, svg,this);
+      });
 
       // listen for dragging
       var dragSvg = d3.behavior.zoom()
@@ -382,12 +412,10 @@
               return;
             }
           };
-          filereader.readAsText(uploadFile);
-          
+          filereader.readAsText(uploadFile);    
         } else {
           alert("Your browser won't let you save this graph -- try upgrading your browser to IE 10+ or Chrome or Firefox.");
         }
-
       });
 
       // handle delete graph
@@ -549,6 +577,20 @@
       sel.addRange(range);
     };
 
+    /* Context Menu Event Handlers */
+    GraphCreator.prototype.contextMenuGroupPaths = function(){
+
+    }
+
+    GraphCreator.prototype.contextMenuDeletePaths = function(){
+      this.deleteSelectedPaths();
+    }
+
+    GraphCreator.prototype.contextMenuDeleteNodes = function(){
+      this.deleteSelectedNodes();
+    }
+    /* End of Context Menu Event Handlers */
+
     /* insert svg line breaks: taken from http://stackoverflow.com/questions/13241475/how-do-i-include-newlines-in-labels-in-d3-charts */
     GraphCreator.prototype.insertTitleLinebreaks = function (gEl, title) {
       var words = title.split(/\s+/g),
@@ -607,13 +649,13 @@
       });
     };
 
-    GraphCreator.prototype.replaceSelectEdge = function(d3Path, edgeData){
+    GraphCreator.prototype.addSelectEdge = function(d3Path, edgeData, replace){
       var thisGraph = this;
       d3Path.classed(thisGraph.consts.selectedClass, true);
-      if (thisGraph.state.selectedEdge){
-        thisGraph.removeSelectFromEdge();
+      if (thisGraph.state.selectedEdges && replace){
+        thisGraph.removeSelectFromEdges();
       }
-      thisGraph.state.selectedEdge = edgeData;
+      thisGraph.state.selectedEdges.push(edgeData);
     };
 
     GraphCreator.prototype.replaceSelectNodes = function(d3Node, nodeData){
@@ -635,12 +677,19 @@
       thisGraph.state.selectedNodes = [];
     };
 
-    GraphCreator.prototype.removeSelectFromEdge = function(){
+    GraphCreator.prototype.removeSelectFromEdges = function(singleEdgeToDelete){
       var thisGraph = this;
       thisGraph.paths.filter(function(cd){
-        return cd === thisGraph.state.selectedEdge;
+        return singleEdgeToDelete ? cd === singleEdgeToDelete : 
+          (thisGraph.state.selectedEdges.filter(function(se){ return cd === se; }).length !== 0);
       }).classed(thisGraph.consts.selectedClass, false);
-      thisGraph.state.selectedEdge = null;
+
+
+      if(singleEdgeToDelete){
+        thisGraph.state.selectedEdges.splice(thisGraph.state.selectedEdges.indexOf(singleEdgeToDelete),1);
+      } else{
+        thisGraph.state.selectedEdges = [];
+      }
     };
 
     GraphCreator.prototype.generateEdgeTooltipHtml = function(thisGraph){
@@ -907,7 +956,6 @@
     }
 
     GraphCreator.prototype.pathMouseDown = function(d3path, d){
-      console.log(this);
       var thisGraph = this,
           state = thisGraph.state,
           edge = d;
@@ -918,15 +966,16 @@
         thisGraph.generateTooltipDiv(thisGraph.generateEdgeTooltipHtml, "tooltip", d,d3path);
       }
 
-      if (state.selectedNodes.length > 0){
+      if (!d3.event.ctrlKey && state.selectedNodes.length > 0){
         thisGraph.removeSelectFromNodes();
       }
       
-      var prevEdge = state.selectedEdge;  
-      if (!prevEdge || prevEdge !== d){
-        thisGraph.replaceSelectEdge(d3path, d);
+      var prevEdges = state.selectedEdges;
+      var edgeNotSelected = !prevEdges.filter(function(e){ return e === d }).length;  
+      if (!prevEdges.length || edgeNotSelected){
+        thisGraph.addSelectEdge(d3path, d, !d3.event.ctrlKey);
       } else{
-        thisGraph.removeSelectFromEdge();
+        thisGraph.removeSelectFromEdges(edgeNotSelected || !d3.event.ctrlKey ? undefined : d);
       }
     };
 
@@ -1460,8 +1509,8 @@
             // shift-clicked node: edit node info
             thisGraph.createCourseSelect.call(thisGraph,d3node,d);
           } else{
-            if (state.selectedEdge){
-              thisGraph.removeSelectFromEdge();
+            if (state.selectedEdges.length && !d3.event.ctrlKey){
+              thisGraph.removeSelectFromEdges();
             }
             var prevNodes = state.selectedNodes;            
             
@@ -1494,7 +1543,9 @@
 
       thisGraph.state.graphMouseDown = true;
       d3.selectAll('g.selected').classed("selected", false);
+      d3.selectAll('path.edge.selected').classed("selected", false);
       thisGraph.state.selectedNodes = [];
+      thisGraph.state.selectedEdges = [];
 
       if(d3.event.shiftKey){
         thisGraph.state.draggableSelection = true;
@@ -1550,7 +1601,9 @@
 
         //deselect all temporary selected state objects
         d3.selectAll('g.conceptG.selection.selected').classed("selected", false);
+        d3.selectAll('path.edge.selection.selected').classed("selected", false);
         thisGraph.state.selectedNodes = [];
+        thisGraph.state.selectedEdges = [];
 
         var radius = thisGraph.nodeRadius,
           dx = (d.x - thisGraph.translate[0]) / thisGraph.scale,
@@ -1558,6 +1611,7 @@
           dWidth = d.width / thisGraph.scale,
           dHeight = d.height / thisGraph.scale;
 
+        //Select nodes
         svg.selectAll('g.conceptG circle').each(function(node, i) {
           if( 
             !d3.select(this).classed("selected") && 
@@ -1569,7 +1623,19 @@
               .classed("selected", true);
             thisGraph.state.selectedNodes.push(node);
           }
+
         });
+
+        //Select edges
+        svg.selectAll('path.edge').each(function(edge, i){
+          if(!d3.select(this).classed("selected") &&
+            thisGraph.state.selectedNodes.filter(function(node){ return node === edge.source }).length &&
+            thisGraph.state.selectedNodes.filter(function(node){ return node === edge.target }).length
+          ){
+            thisGraph.state.selectedEdges.push(edge);
+            d3.select(this).classed("selection", true).classed("selected", true);
+          }
+        })
       } else
         s.remove();
     }
@@ -1615,7 +1681,7 @@
 
       state.lastKeyDown = d3.event.keyCode;
       var selectedNodes = state.selectedNodes,
-          selectedEdge = state.selectedEdge;
+          selectedEdges = state.selectedEdges;
 
       switch(d3.event.keyCode) {
       case consts.SHIFT_KEY:
@@ -1625,22 +1691,56 @@
         break;
       case consts.DELETE_KEY:
         d3.event.preventDefault();
-        if (selectedNodes.length && window.confirm('Are you sure you want to delete the selected courses?')){
-          selectedNodes.forEach(function(selectedNode){
-            thisGraph.nodes.splice(thisGraph.nodes.indexOf(selectedNode), 1);
-            thisGraph.spliceLinksForNode(selectedNode);
-          });
-
-          state.selectedNodes = [];
-          thisGraph.updateGraph();
-        } else if (selectedEdge){
-          thisGraph.edges.splice(thisGraph.edges.indexOf(selectedEdge), 1);
-          state.selectedEdge = null;
-          thisGraph.updateGraph();
+        if (selectedNodes.length){
+          thisGraph.deleteSelectedNodes();
+        } else if (selectedEdges.length){
+          thisGraph.deleteSelectedPaths();
         }
         break;
       }
     };
+
+    GraphCreator.prototype.deleteSelectedPaths = function(){
+      var thisGraph = this;
+      var state = thisGraph.state;
+      var selectedEdges = state.selectedEdges;
+
+      if(selectedEdges.length){
+        thisGraph.state.selectedEdges.forEach(function(edge){
+          var targetIdx = thisGraph.findNodeIndex(edge.target);
+          var reqIdx = edge.target.course.findRequirementIndex(edge.target.course.course_subj_code,
+            edge.target.course.course_num);
+
+          if(thisGraph.helper.isArray(reqIdx))
+            thisGraph.nodes[targetIdx].course.requirements[reqIdx[0]].splice(reqIdx[1],1);
+          else
+            thisGraph.nodes[targetIdx].course.requirements.splice(reqIdx,1);
+
+          thisGraph.edges.splice(thisGraph.edges.indexOf(edge), 1);
+        });
+
+        thisGraph.state.selectedEdges = [];
+        thisGraph.updateGraph();
+      }
+    }
+
+    GraphCreator.prototype.deleteSelectedNodes = function(){
+      var thisGraph = this;
+      var state = thisGraph.state;
+      var selectedNodes = state.selectedNodes;
+
+      d3.event.preventDefault();
+
+      if (selectedNodes.length && window.confirm('Are you sure you want to delete the selected courses?')){
+        selectedNodes.forEach(function(selectedNode){
+          thisGraph.nodes.splice(thisGraph.nodes.indexOf(selectedNode), 1);
+          thisGraph.spliceLinksForNode(selectedNode);
+        });
+
+        state.selectedNodes = [];
+        thisGraph.updateGraph();
+      }
+    }
 
     GraphCreator.prototype.svgKeyUp = function() {
       this.state.lastKeyDown = -1;
@@ -1666,7 +1766,7 @@
       paths.style('marker-end', 'url(#end-arrow)')
         //.style('marker-start', 'url(#start-arrow)')
         .classed(consts.selectedClass, function(d){
-          return d === state.selectedEdge;
+          return state.selectedEdges.filter(function(e){ e === d }).length;
         })
         .classed("PREREQ", function(d){ return d.type === RelationshipType.PREREQ })
         .classed("COREQ", function(d) { return d.type === RelationshipType.COREQ})
@@ -1684,7 +1784,7 @@
       paths.enter()
         .append("path")
         .style('marker-end','url(#end-arrow)')
-        //.style('marker-start', 'url(#start-arrow)')
+        .classed("edge", true)
         .classed("PREREQ", function(d){ return d.type === RelationshipType.PREREQ })
         .classed("COREQ", function(d) { return d.type === RelationshipType.COREQ})
         .classed("COREQ_STRICT", function(d){ return d.type === RelationshipType.COREQ_STRICT})
@@ -1694,10 +1794,11 @@
           return "M" + d.source.x + "," + d.source.y + "L" + d.target.x + "," + d.target.y;
         })
         .on("mousedown", function(d){
+          if(d3.event.button !== 0) return false;
           thisGraph.pathMouseDown.call(thisGraph, d3.select(this), d);
-          }
-        )
+        })
         .on("mouseup", function(d){
+          if(d3.event.button !== 0) return false;
           state.mouseDownLink = null;
         });
 
@@ -1758,6 +1859,8 @@
           d3.select(this).classed(consts.connectClass, false);
         })
         .on("mousedown", function(d){
+          if(d3.event.button !== 0) return false;
+
           if($("#node"+d.id+"div").length){
             $("#node"+d.id+"div").smallipop('hide');  
             $("#node"+d.id+"div").remove();
@@ -1765,6 +1868,7 @@
           thisGraph.circleMouseDown.call(thisGraph, d3.select(this), d);
         })
         .on("mouseup", function(d){
+          if(d3.event.button !== 0) return false;
           thisGraph.circleMouseUp.call(thisGraph, d3.select(this), d);
         })
         .call(thisGraph.drag);
