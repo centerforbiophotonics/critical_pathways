@@ -73,6 +73,9 @@
   %label Circle Radius
   %input{:id => 'radius_slider', :type => 'range', :min => '30', :max => '50', :step => '1', :value => '40'}
 
+:javascript
+  var course_data = {};
+
 %script(src="//cdn.jsdelivr.net/filesaver.js/0.1/FileSaver.min.js")
 =render :partial => 'enums.js'
 =render :partial => 'helper.js'
@@ -85,7 +88,6 @@
 =render :partial => 'course_groups.js'
 
 :javascript
-  var course_data = {};
   $(document).ready(function() {
     $('#simple-menu').sidr({
       displace: false,
