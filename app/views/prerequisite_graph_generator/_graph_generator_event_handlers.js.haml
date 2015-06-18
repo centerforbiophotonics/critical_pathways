@@ -1,4 +1,6 @@
 :javascript
+  //Contains functions that handle mouse and keydown events on svg elements
+  //NOTE: jQuery event handlers are in different files
   var MODULE = (function(my){
 
     // mousedown on node
@@ -84,15 +86,61 @@
 
     /* Context Menu Event Handlers */
     my.GraphCreator.prototype.contextMenuGroupPaths = function(){
+      var thisGraph = this, target,
+        selectedEdges = thisGraph.state.selectedEdges;
 
+      if(selectedEdges.length <= 1){
+        alert('At least two edges must be selected');
+        return;
+      } else
+        target = selectedEdges[0].target;
+
+      for(var i = 1; i < selectedEdges.length; i++){
+        if(selectedEdges[i].target !== target){
+          alert('All selected paths must have the same target');
+          return;
+        }
+      }
+
+      //Remove any optional groups that members of the selected group were a part of
+      var deleteGroups = [];
+      selectedEdges.forEach(function(e){
+        thisGraph.optionalGroups.forEach(function(group){
+          if(e.group === group && deleteGroups.indexOf(group) === -1)
+            deleteGroups.push(group);
+        });
+      });
+
+      deleteGroups.forEach(function(group){
+        var groupInd = thisGraph.optionalGroups.indexOf(group);
+        thisGraph.optionalGroups.splice(groupInd,1);
+
+        for(var i = 0; i < thisGraph.edges.length; i++){
+          if(thisGraph.edges[i].group === group){
+            thisGraph.edges[i].optional = false;
+            thisGraph.edges[i].group = thisGraph.edgeGrp++;
+          }
+        }
+      });
+
+      thisGraph.setPrereqsToOptional(selectedEdges,target);
+      thisGraph.setEdgeGroup(selectedEdges,target);
+      thisGraph.removeSelectFromEdges();
+      thisGraph.updateGraph();
     }
 
     my.GraphCreator.prototype.contextMenuDeletePaths = function(){
-      this.deleteSelectedPaths();
+      if(this.state.selectedEdges.length > 0)
+        this.deleteSelectedPaths();
+      else
+        alert('No paths selected');
     }
 
     my.GraphCreator.prototype.contextMenuDeleteNodes = function(){
-      this.deleteSelectedNodes();
+      if(this.state.selectedNodes.length > 0)
+        this.deleteSelectedNodes();
+      else
+        alert('No courses selected');
     }
     /* End of Context Menu Event Handlers */
 
@@ -322,6 +370,6 @@
       d3.select("." + this.consts.graphClass)
         .attr("transform", "translate(" + d3.event.translate + ") scale(" + d3.event.scale + ")"); 
     };
-    
+
     return my;
   })(MODULE || {});

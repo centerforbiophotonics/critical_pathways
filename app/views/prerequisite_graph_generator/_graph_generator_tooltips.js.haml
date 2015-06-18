@@ -14,24 +14,24 @@
           '<option value="COREQ_STRICT">Must be taken concurrently</option>' +
           '<option value="RECOMMENDED">Recommended</option>' +
         '</select>' +
-        '<button style="width: 49%; margin-top: 5px; margin-right: 1%" id="change_edge">Enter</button>'+
-        '<button style="width: 49%; margin-top: 5px; margin-left: 1%" id="remove_tooltip">Cancel</button>'
+        '<button class="myButton" style="width: 49%; margin-top: 5px; margin-right: 1%" id="change_edge">Enter</button>'+
+        '<button class="myButton" style="width: 49%; margin-top: 5px; margin-left: 1%" id="remove_tooltip">Cancel</button>'
       );
     }
 
     my.GraphCreator.prototype.generateNodeFormHtml = function(thisGraph){
       return (
         '<h3>Course Subject Code</h3>' +
-        '<select id="course_subj_code_select" style="width: 100%">'+
+        '<select class="courseFormSelect" id="course_subj_code_select" style="width: 100%">'+
           '<option></option>'+
           thisGraph.courseSubjectCodes() +
         '</select>' +
         '<h3>Course Number</h3>' +
-        '<select id="course_num_select" style="width: 100%">'+
+        '<select class="courseFormSelect" id="course_num_select" style="width: 100%">'+
         '</select>' +
-        '<button style="margin-top: 5px; width: 100%" id="change_requirements">Set Prerequisites</button>'+
-        '<button style="width: 49%; margin-top: 5px; margin-right: 1%" id="change_course">Enter</button>'+
-        '<button style="width: 49%; margin-left: 1%; margin-top: 5px" id="remove_tooltip">Cancel</button>'
+        '<button class="myButton" style="margin-top: 5px; width: 100%" id="change_requirements">Set Prerequisites</button>'+
+        '<button class="myButton" style="width: 49%; margin-top: 5px; margin-right: 1%" id="change_course">Enter</button>'+
+        '<button class="myButton" style="width: 49%; margin-left: 1%; margin-top: 5px" id="remove_tooltip">Cancel</button>'
       );
     }
 
@@ -188,6 +188,6 @@
 
       return true;
     }
-    
+
     return my;
   })(MODULE || {});

@@ -1,5 +1,7 @@
 :javascript
+  //Contains functions that add, update, and remove edges in the graph
   var MODULE = (function(my){
+    //Add select to an edge
     my.GraphCreator.prototype.addSelectEdge = function(d3Path, edgeData, replace){
       var thisGraph = this;
       d3Path.classed(thisGraph.consts.selectedClass, true);
@@ -9,6 +11,7 @@
       thisGraph.state.selectedEdges.push(edgeData);
     };
 
+    //Remove edges that have been removed in prereq form
     my.GraphCreator.prototype.removeEdges = function() {
       var thisGraph = this,
         node = thisGraph.prereqContainer.node,
@@ -55,6 +58,7 @@
       thisGraph.updateGraph();
     }
 
+    //Remove select from edges - only 1 edge if edge is provided, all edges otherwise
     my.GraphCreator.prototype.removeSelectFromEdges = function(singleEdgeToDelete){
       var thisGraph = this;
       thisGraph.paths.filter(function(cd){
@@ -70,6 +74,7 @@
       }
     };
 
+    //Changes requirement type for an edge and removes the popup form
     my.GraphCreator.prototype.updatePathType = function(d3path, d) {
       var thisGraph = this;
       var classHash = {};
@@ -97,6 +102,7 @@
       thisGraph.tooltipEdge = null;
     }
 
+    //Given an array of edges with the same target and that target, creates a new optional group
     my.GraphCreator.prototype.setEdgeGroup = function(optionGroup,target) {
       var group, thisGraph = this;
 
@@ -114,6 +120,7 @@
       thisGraph.optionalGroups.push(group);
     }
 
+    //Delete any optional groups that only have 1 member
     my.GraphCreator.prototype.removeOldGroups = function(){
       var thisGraph = this, numGroups = thisGraph.optionalGroups.length, idx = -1,
         removeGroups = [], removeGroupIndices = [];
@@ -139,6 +146,7 @@
       }
     }
 
+    //Designate a color for each set of edges that make up an optional group (red to green)
     my.GraphCreator.prototype.setGroupColors = function() {
       var thisGraph = this;
       var  numGroups = parseInt(thisGraph.optionalGroups.length.toString(16).toUpperCase(),16),
@@ -156,6 +164,8 @@
       }
       thisGraph.colorScale = groupColors;
     }
+
+    //Creates and returns a new edge, given a source, target, requirement type, and group number
     my.GraphCreator.prototype.createEdge = function(source,target,relType,group) {
       var thisGraph = this,
         group = (group === undefined || group === null ) ? thisGraph.edgeGrp++ : group
@@ -177,6 +187,7 @@
       return thisGraph.edges[thisGraph.findEdgeIndex(source,target)];     
     }
 
+    //Delete all currently selected edges and the underlying data
     my.GraphCreator.prototype.deleteSelectedPaths = function(){
       var thisGraph = this;
       var state = thisGraph.state;
@@ -201,6 +212,7 @@
       }
     }
 
+    //Find the index of an edge given a source and a target
     my.GraphCreator.prototype.findEdgeIndex = function(source,target) {
       var thisGraph = this;
 

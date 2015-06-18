@@ -1,0 +1,144 @@
+:javascript
+  var MODULE = (function(my){
+    my.GraphCreator.prototype.downloadCourseInfoHandler = function(){
+      var thisGraph = this;
+      var years = 4;
+      var headers = ["Course","Fall Offerings","Fall Avg Size","Winter Offerings","Winter Avg Size",
+        "Spring Offerings","Spring Avg Size","Summer Sessoin 1 Offerings","Summer Session 1 Avg Size",
+        "Summer Session 2 Offerings", "Summer Session 2 Avg Size", "Special Summer Session Offerings",
+        "Special Summer Session Avg Size", "Extra Session Offerings", "Extra Session Avg Size",
+        "Summer Quarter Offerings","Summer Quarter Avg Size","Min Prior Quarters","Number Dependent Courses"];
+      var adjList = {'directed':{}, 'reversed':{}}
+      var courseInfo = [headers];
+      var terms = ['fall', 'winter','spring','summer1', 'summer2','summer_special','summer_extra', 'summer_quarter'];
+
+      thisGraph.nodes.forEach(function(d){
+        var id = d.id.toString();
+        adjList['directed'][id] = [];
+        adjList['reversed'][id] = [];
+      });
+
+      thisGraph.edges.forEach(function(edge){
+        var sourceIdStr = edge.source.id.toString(),
+          targetIdStr = edge.target.id.toString();
+
+        adjList['directed'][sourceIdStr].push(targetIdStr);
+        adjList['reversed'][targetIdStr].push(sourceIdStr);
+      });
+
+      thisGraph.nodes.forEach(function(d){
+        var history = thisGraph.getCourseHistory.call(thisGraph, d),
+          course = d.course, thisCourse = [d.title];
+        var termMap = history.term_map;
+
+        terms.forEach(function(term){
+          thisCourse.push(history.offerings[term] + ' out of ' + years);
+          thisCourse.push(Math.round(history.size[term]/history.offerings[term]));
+        });
+
+        var minPriorQuarters = thisGraph.minimumPriorQuarters.call(thisGraph,d,adjList['reversed']);
+        thisCourse.push(minPriorQuarters);  
+
+        var numDependentCourses = thisGraph.BFS(adjList['directed'],d);
+        thisCourse.push(numDependentCourses);
+        courseInfo.push(thisCourse);
+      });
+
+      var dataString = '', csvContent = '';
+      courseInfo.forEach(function(infoArray, index){
+        dataString = infoArray.join(",");
+        csvContent += index < courseInfo.length ? dataString+ "\n" : dataString;
+      }); 
+
+      var blob = new Blob([csvContent]);
+      var filename = prompt("Please enter the name of the file you want to save to (will save with .csv extension)");
+
+      if(filename === "" || (filename !== null && filename.trim() === ""))
+        alert('Filename cannot be blank');
+      else if(filename && filename !== "null")
+        saveAs(blob, filename+".csv");
+
+      $("#download_div").slideToggle();
+    }
+
+    my.GraphCreator.prototype.downloadGraphHandler = function(){
+      var thisGraph = this;
+      var saveEdges = [];
+      var saveNodes = [];
+      var optionalGroups = [];
+
+
+      $("#download_div").slideToggle();
+      thisGraph.edges.forEach(function(val, i){
+        saveEdges.push(val.toJson());
+      });
+
+      thisGraph.nodes.forEach(function(val,i){
+        saveNodes.push(val.toJson());
+      });
+
+      optionalGroups = thisGraph.optionalGroups;
+
+      var blob = new Blob([window.JSON.stringify({"width": thisGraph.svgWidth, "height": thisGraph.svgHeight, "nodes": saveNodes, "edges": saveEdges, "optionalGroups": optionalGroups})], {type: "text/plain;charset=utf-8"});
+      var filename = prompt("Please enter the name of the file you want to save to (will save with .json extension)");
+
+      if(filename === "" || (filename !== null && filename.trim() === ""))
+        alert('Filename cannot be blank');
+      else if(filename && filename !== "null")
+        saveAs(blob, filename+".json");
+    }
+
+    my.GraphCreator.prototype.uploadGraphHandler = function(thisGraph){
+      if (window.File && window.FileReader && window.FileList && window.Blob) {
+        var uploadFile = this.files[0];
+        var filereader = new window.FileReader();
+        
+        filereader.onload = function(){
+          var txtRes = filereader.result;
+          // TODO better error handling
+          try{
+            var jsonObj = JSON.parse(txtRes);
+            thisGraph.deleteGraph(true);
+
+            thisGraph.nodes = [];
+            var width = jsonObj.width;
+            var height = jsonObj.height;
+
+            jsonObj.nodes.forEach(function(node, i){
+              node.x *= (thisGraph.svgWidth / width);
+              node.y *= (thisGraph.svgHeight / height);
+              thisGraph.nodes[i] = Node.prototype.fromJson(node);
+            })
+
+            var max = (function(){
+              var max = 0;
+              for(var i = 0; i < thisGraph.nodes.length; i++)
+                if(max < thisGraph.nodes[i].id)
+                  max = thisGraph.nodes[i].id;
+              return max;
+            })();
+
+            thisGraph.setIdCt(max + 1);
+            var newEdges = [];
+            var tempEdges = jsonObj.edges;
+            tempEdges.forEach(function(e, i){
+              newEdges[i] = new Edge(thisGraph.nodes.filter(function(n){return n.id === e.source.id;})[0],
+                              thisGraph.nodes.filter(function(n){return n.id === e.target.id;})[0],
+                              e.type,e.group,e.optional);
+            });
+            thisGraph.optionalGroups = jsonObj.optionalGroups;
+            thisGraph.edges = newEdges;
+            thisGraph.updateGraph();
+          }catch(err){
+            window.alert("Error parsing uploaded file\nerror message: " + err.message);
+            return;
+          }
+        };
+        filereader.readAsText(uploadFile);    
+      } else {
+        alert("Your browser won't let you save this graph -- try upgrading your browser to IE 10+ or Chrome or Firefox.");
+      }
+    }
+
+    return my;
+  })(MODULE || {});

@@ -25,6 +25,7 @@
     this.currentPrereqId = 0;
     this.prereqFormIds = [];
     this.nextPrereqIds = [];
+    this.formHtml = null;
   }
 
 
@@ -33,14 +34,19 @@
     var len = thisForm.prereqFormIds[thisForm.currentPrereqId].length,
       optionId = thisForm.prereqFormIds[thisForm.currentPrereqId][len - 1];
 
-    console.log(thisForm);
     //Initialize select2s
     $("#course_subj_code_select_"+thisForm.currentPrereqId+'_'+optionId).select2({
-      placeholder: 'Subject Code'
+      placeholder: 'Subject Code',
+      sortResults: function(results) {
+        return results.sort(thisForm.helper.alphabeticalCmp);
+      }
     });
 
     $("#course_num_select_"+thisForm.currentPrereqId+'_'+optionId).select2({
-      placeholder: 'Course Number'
+      placeholder: 'Course Number',
+      sortResults: function(results) {
+        return results.sort(thisForm.helper.alphabeticalCmp);
+      }
     });
 
     $("#prereq_type_select_"+thisForm.currentPrereqId+'_'+optionId).select2({
@@ -104,8 +110,36 @@
       var id = parseInt(e.target.id.split('_')[4]),
         optionId = parseInt(e.target.id.split('_')[5]);
       thisForm.updateCourseNumSelect.call(thisForm, d3.select(this), node, id, optionId);
+      $("#course_num_select_"+thisForm.currentPrereqId+'_'+optionId).select2('open');
     });
 
+    $("#course_subj_code_select_"+thisForm.currentPrereqId+'_'+optionId).on("select2-focus", function(e){
+      $("#s2id_course_subj_code_select_"+thisForm.currentPrereqId+'_'+optionId+' a').addClass('formSelect');
+    }).on('select2-blur', function(e){
+      $("#s2id_course_subj_code_select_"+thisForm.currentPrereqId+'_'+optionId+' a').removeClass('formSelect');
+    })
+
+    $("#course_num_select_"+thisForm.currentPrereqId+'_'+optionId).on("change", function(e){
+      $("#prereq_type_select_"+thisForm.currentPrereqId+'_'+optionId).select2('open');
+    });
+
+    $("#course_num_select_"+thisForm.currentPrereqId+'_'+optionId).on("select2-focus", function(e){
+      $("#s2id_course_num_select_"+thisForm.currentPrereqId+'_'+optionId+' a').addClass('formSelect');
+    }).on('select2-blur', function(e){
+      $("#s2id_course_num_select_"+thisForm.currentPrereqId+'_'+optionId+' a').removeClass('formSelect');
+    });
+
+    $("#prereq_type_select_"+thisForm.currentPrereqId+'_'+optionId).on("change", function(e){
+      $("#add_prereq_"+thisForm.currentPrereqId+'_'+optionId).focus();
+    })
+
+    $("#prereq_type_select_"+thisForm.currentPrereqId+'_'+optionId).on("select2-focus", function(e){
+      $("#s2id_prereq_type_select_"+thisForm.currentPrereqId+'_'+optionId+' a').addClass('formSelect');
+    }).on('select2-blur', function(e){
+      $("#s2id_prereq_type_select_"+thisForm.currentPrereqId+'_'+optionId+' a').removeClass('formSelect');
+    });
+
+    $("#course_subj_code_select_"+thisForm.currentPrereqId+'_'+optionId).select2('open');
   }
 
 
@@ -161,14 +195,15 @@
     }
 
     $("#course_num_select"+id_concat+optionId_concat).html(options_str);
-    $("#course_num_select"+id_concat+optionId_concat).change();
   }
 
   PrereqForm.prototype.closeForm = function(e) {
     var thisForm = this;
 
     if(confirm('Any unsaved changes will be lost.  Close anyways?')){
-      $.unblockUI(); 
+      $.unblockUI({
+        onUnblock: function(){ thisForm = null }
+      }); 
       thisForm.prereqCount = 0;
       thisForm.prereqId = 0;
       return true;
@@ -179,71 +214,76 @@
   //Initialize form and dialog box
   PrereqForm.prototype.setCourseRequirements = function() {
     var thisForm = this,
-      node = thisForm.node;
+      node = thisForm.node,
+      myCss =   {
+        cursor: "pointer",
+      }
 
-    thisForm.prereqId = 0;
-    thisForm.prereqCount = 0;
-    thisForm.currentPrereqId = 0;
-    thisForm.prereqFormIds = [[0]];
-    thisForm.nextPrereqIds = [0];
+    if(thisForm.formHtml){
+      $.blockUI({message: thisForm.formHtml, css: myCss, bindEvents: false});
+      $('.blockUI.blockMsg').addClass('myBlockUI');
+    } else {
+      thisForm.prereqId = 0;
+      thisForm.prereqCount = 0;
+      thisForm.currentPrereqId = 0;
+      thisForm.prereqFormIds = [[0]];
+      thisForm.nextPrereqIds = [0];
 
-    var myCss =   {
-      cursor: "pointer",
-    }
+      $.blockUI({message: thisForm.requirementsFormHtml(), css: myCss, bindEvents: false });
 
-    $.blockUI({message: thisForm.requirementsFormHtml(), css: myCss, bindEvents: false });
-    $('.blockUI.blockMsg').addClass('myBlockUI');
-    thisForm.prereqCount++;
-    thisForm.prereqId++;
+      thisForm.prereqCount++;
+      thisForm.prereqId++;
 
-    var callCloseForm = function(e){ return thisForm.closeForm.call(thisForm, e) }
+      var callCloseForm = function(e){ return thisForm.closeForm.call(thisForm, e) }
 
-    $(".blockUI.blockMsg #closeButton").off("click", callCloseForm).on("click", callCloseForm);
+      $(".blockUI.blockMsg #closeButton").off("click", callCloseForm).on("click", callCloseForm);
 
-    $("#save_prereqs").click(function(e){
-      thisForm.validateAndSubmit.call(thisForm, e);
-    });
+      $("#save_prereqs").click(function(e){
+        thisForm.validateAndSubmit.call(thisForm, e);
+      });
+        
+      $('.blockUI.blockMsg').addClass('myBlockUI');
 
-    console.log('REQUIREMENTS',node.course.requirements);
-    if(node.course.requirements.length === 0){
-      //New set of requirements
-      thisForm.initializePrereqForm(node);
-    }else {
-      //Requirements have previously been set for this course
-      var first = true;
-      node.course.requirements.forEach(function(req, i){
-        var optId = 0;
-        if(thisForm.helper.isArray(req)){
-          //Create form element for this list of options for a prereq
-          req.forEach(function(r, j){
-            optId = j;
+      if(!thisForm.formHtml && node.course.requirements.length === 0){
+        //New set of requirements
+        thisForm.initializePrereqForm(node);
+      }else if(!thisForm.formHtml) {
+        //Requirements have previously been set for this course
+        var first = true;
+        node.course.requirements.forEach(function(req, i){
+          var optId = 0;
+          if(thisForm.helper.isArray(req)){
+            //Create form element for this list of options for a prereq
+            req.forEach(function(r, j){
+              optId = j;
+              if(first){
+                thisForm.initializePrereqForm(node);
+                first = false;
+              }else if(j === 0){
+                thisForm.addNewPrereq.call(thisForm,i - 1);
+              }else {
+                thisForm.addAlternativePrereq.call(thisForm,i,j - 1);
+              }
+
+              $("#course_subj_code_select_"+i+"_"+optId).val(r.node.course.course_subj_code).change();
+              $("#course_num_select_"+i+"_"+optId).val(r.node.course.course_num.toString()).change();
+              $("#prereq_type_select_"+i+"_"+optId).val(r.requirement_type).change();
+            });
+          }else{
+            //Single prereq
             if(first){
               thisForm.initializePrereqForm(node);
-              first = false;
-            }else if(j === 0){
+              first = false;            
+            } else {
               thisForm.addNewPrereq.call(thisForm,i - 1);
-            }else {
-              thisForm.addAlternativePrereq.call(thisForm,i,j - 1);
             }
 
-            $("#course_subj_code_select_"+i+"_"+optId).val(r.node.course.course_subj_code).change();
-            $("#course_num_select_"+i+"_"+optId).val(r.node.course.course_num.toString()).change();
-            $("#prereq_type_select_"+i+"_"+optId).val(r.requirement_type).change();
-          });
-        }else{
-          //Single prereq
-          if(first){
-            thisForm.initializePrereqForm(node);
-            first = false;            
-          } else {
-            thisForm.addNewPrereq.call(thisForm,i - 1);
+            $("#course_subj_code_select_"+i+"_"+optId).val(req.node.course.course_subj_code).change();
+            $("#course_num_select_"+i+"_"+optId).val(req.node.course.course_num.toString()).change();
+            $("#prereq_type_select_"+i+"_"+optId).val(req.requirement_type).change();
           }
-
-          $("#course_subj_code_select_"+i+"_"+optId).val(req.node.course.course_subj_code).change();
-          $("#course_num_select_"+i+"_"+optId).val(req.node.course.course_num.toString()).change();
-          $("#prereq_type_select_"+i+"_"+optId).val(req.requirement_type).change();
-        }
-      });
+        });
+      }
     }
   }
 
@@ -298,8 +338,12 @@
     });
 
     if(valid){
+      console.log(prereqs);
+      thisForm.formHtml = $('.prereq_form');
       thisForm.callback.call(thisForm.objRef,thisForm.node,prereqs);
-      $.unblockUI();
+      $.unblockUI({
+        onUnblock: function(){ $("#change_course").focus() }
+      });
     }
 
     return valid;
@@ -330,7 +374,7 @@
       $('#closeButtonContainer').html() +
        thisForm.generatePrereqForm() +
       '<div id="select2parent" style="display: none"></div>'+
-      '<button id="save_prereqs" style="margin-top: 5px">Save Prerequisites</button>'+
+      '<button class="myButton" id="save_prereqs" style="margin: 5px">Save Prerequisites</button>'+
       '</div>'
     );
   }
@@ -361,9 +405,9 @@
             '<option value=2>Must be taken concurrently</option>' +
             '<option value=3>Recommended</option>' +
           '</select>' +
-          '<button style="margin: 5px" id="add_prereq_'+prereqId+'_'+optionId+'">Add New Prerequisite</button>'+
-          '<button style="margin: 5px" id="add_alternative_prereq_'+prereqId+'_'+optionId+'">Add Alternative Prerequisite</button>'+
-          '<button style="margin: 5px" id="remove_prereq_'+prereqId+'_'+optionId+'">Delete Prerequisite</button>'+
+          '<button class="myButton" style="margin: 5px" id="add_prereq_'+prereqId+'_'+optionId+'">Add New Prerequisite</button>'+
+          '<button class="myButton" style="margin: 5px" id="add_alternative_prereq_'+prereqId+'_'+optionId+'">Add Alternative Prerequisite</button>'+
+          '<button class="myButton" style="margin: 5px" id="remove_prereq_'+prereqId+'_'+optionId+'">Delete Prerequisite</button>'+
         '</div>'+
       (prereqId == thisForm.prereqId ? '</div>' : '')
     );

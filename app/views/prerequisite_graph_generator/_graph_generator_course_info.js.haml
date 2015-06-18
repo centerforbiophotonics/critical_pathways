@@ -1,38 +1,7 @@
 :javascript
+  //Contains functions that help show and edit information about courses and their prerequisistes
   var MODULE = (function(my){
-    my.GraphCreator.prototype.setIdCt = function(idct){
-      this.idct = idct;
-    };
-
-    my.GraphCreator.prototype.consts =  {
-      selectedClass: "selected",
-      connectClass: "connect-node",
-      circleGClass: "conceptG",
-      graphClass: "graph",
-      activeEditId: "active-editing",
-      BACKSPACE_KEY: 8,
-      DELETE_KEY: 46,
-      ENTER_KEY: 13,
-      SHIFT_KEY: 16
-    };
-
-    my.GraphCreator.prototype.deleteGraph = function(skipPrompt){
-      var thisGraph = this,
-          doDelete = true;
-      if (!skipPrompt){
-        doDelete = window.confirm("Press OK to delete this graph");
-      }
-      if(doDelete){
-        thisGraph.setIdCt(0);
-        thisGraph.edgeGrp = 0;
-        thisGraph.colorScale = [];
-        thisGraph.optionalGroups = [];
-        thisGraph.nodes = [];
-        thisGraph.edges = [];
-        thisGraph.updateGraph();
-      }
-    };
-
+    //Generate html consisting of options for a select containing all subject codes
     my.GraphCreator.prototype.courseSubjectCodes = function() {
       var select_html = '';
       var first = false;
@@ -47,6 +16,7 @@
       return select_html;
     }
 
+    //Check if prerequisite relationships are valid
     my.GraphCreator.prototype.isValidPrereqs = function(course_subj_code,course_num) {
       var thisGraph = this;
 
@@ -62,14 +32,40 @@
       return true;
     }
 
-    my.GraphCreator.prototype.parseClasses = function(c) {
-      for(var i in c)
-        if(c[i] == "PREREQ" || c[i] == "COREQ" || c[i] == "COREQ_STRICT" || c[i] == "RECOMMENDED")
-          return c[i];
+    //Called when edges are grouped via context menu.  Creates new optional group
+    //in target's course.requirements attributes. Make any other optional groups
+    //those edges are a part of no longer optional
+    my.GraphCreator.prototype.setPrereqsToOptional = function(edges,target){
+      var thisGraph = this, prereqInds = [], nodeIdx = this.findNodeIndex(target),
+        prereqsToPush = [];
 
-      return null;
+      edges.forEach(function(edge){
+          thisGraph.nodes[nodeIdx].course.requirements.forEach(function(req, i){
+          if(prereqInds.indexOf(i) === -1){
+            if(thisGraph.helper.isArray(req)){
+              req.forEach(function(r,j){
+                if(r.node === edge.source){
+                  prereqInds.push(i);
+                  var reqCpy = req;
+                  reqCpy.splice(j,1);
+                  prereqsToPush = prereqsToPush.concat(reqCpy);
+                }
+              })
+            }else if(req.node === edge.source) prereqInds.push(i);
+          }
+        })  
+      });
+
+      thisGraph.nodes[nodeIdx].course.requirements = 
+        thisGraph.helper.spliceMultInds(thisGraph.nodes[nodeIdx].course.requirements,prereqInds).concat(prereqsToPush);
+
+      var optGroup = [];
+      edges.forEach(function(e){ optGroup.push({node: e.source, requirement_type: e.type}) });
+      thisGraph.nodes[nodeIdx].course.requirements.push(optGroup);
     }
 
+    //Given an edge index and new requirement type, finds the source node in the target's requirements
+    //and updates its requirement type to the new value
     my.GraphCreator.prototype.updateCourseRequirements = function(idx,reqType,groupLength) {
       var thisGraph = this;
 
@@ -85,6 +81,8 @@
       })
     }
 
+    //Called when prereq form is submitted.  Saves prereq information 
+    //until it is saved when the node's smallipop form is submitted
     my.GraphCreator.prototype.setPrereqContainer = function(node,prereqs){
       this.prereqContainer.node = node;
       this.prereqContainer.prereqs = prereqs;
@@ -95,6 +93,7 @@
       this.prereqContainer.prereqs = [];
     }
 
+    //Set prerequisites for course when prereq form and node form are both submitted
     my.GraphCreator.prototype.setPrerequisites = function() {
       var thisGraph = this,
         node = thisGraph.prereqContainer.node,
@@ -122,6 +121,7 @@
                 //An edge between these nodes already exists
                 if(edgeIndex !== -1){
                   thisGraph.edges[edgeIndex].type = prereq.requirement_type;
+                  thisGraph.edges[edgeIndex].optional = false;
                   optionGroup.push(thisGraph.edges[edgeIndex]);
 
                   if(optIdx === 0) 
@@ -169,6 +169,7 @@
       thisGraph.clearPrereqContianer();
     }
 
+    //Adds a new prereq to a node course.requirements member
     my.GraphCreator.prototype.addNewPrereq = function(idx, prereqNode,reqType,prereq_list,listIdx,optIdx) {
       var thisGraph = this;
       var newPrereq = {node: prereqNode, requirement_type: reqType};
@@ -186,6 +187,7 @@
         thisGraph.nodes[idx].course.requirements[listIdx] = newPrereq;
     }
 
+    //Does initial set up for form that appears on shift click of a node or the svg
     my.GraphCreator.prototype.initializeCourseForm = function(d3node,d) {
         var thisGraph = this,
           node = d;
@@ -204,40 +206,22 @@
 
       $("#change_course").on("click", function(d){
         var courseUpdated = thisGraph.updateNodeCourse.call(thisGraph, d3node, node); 
-
+        thisGraph.prereqForm = null;
         return courseUpdated;
       }) 
 
       $("#change_requirements").on("click", function(d){
-        thisGraph.prereqForm = new PrereqForm(thisGraph.setPrereqContainer, thisGraph, node, d3node);
+        if(!thisGraph.prereqForm)
+          thisGraph.prereqForm = new PrereqForm(thisGraph.setPrereqContainer, thisGraph, node, d3node);
         $(".smallipop-instance").css('z-index', '1');
         thisGraph.prereqForm.setCourseRequirements();
       })
-
-      function alphabetical(a, b) {
-        var A = a.text.toLowerCase().split('');
-        var B = b.text.toLowerCase().split('');
-        var len = Math.min(A.length, B.length);
-
-        for(var i = 0; i < len; i++){
-          if(A[i] < B[i])
-            return -1;
-          else if (A[i] > B[i])
-            return 1;
-        }
-        if(A.length < B.length)
-          return -1;
-        else if(A.length > B.length)
-          return 1;
-
-        return 0;
-      }
 
       $("#course_subj_code_select").select2({ 
         width: 'style', 
         placeholder: 'Subject Code',
         sortResults: function(results) {
-          return results.sort(alphabetical);
+          return results.sort(thisGraph.helper.alphabeticalCmp);
         }
       });
 
@@ -247,11 +231,9 @@
         width: 'style', 
         placeholder: 'Course Number',
         sortResults: function(results) {
-          return results.sort(alphabetical);
+          return results.sort(thisGraph.helper.alphabeticalCmp);
         }
       });
-
-      //thisGraph.tooltipNode = d3.event.target;
 
       if(d.course.course_subj_code !== null){
         $("#course_subj_code_select").val(d.course.course_subj_code);
@@ -260,8 +242,15 @@
         $("#course_num_select").change();
       }else
         thisGraph.updateCourseNumSelect.call(thisGraph);
+
+      $(".courseFormSelect").on('select2-focus',function(e){
+        $("#s2id_"+e.target.id+' a').addClass('formSelect');
+      }).on('select2-blur',function(e){
+        $("#s2id_"+e.target.id+' a').removeClass('formSelect');
+      });
     }
 
+    //Generates the html that goes in the node mouseover tooltip
     my.GraphCreator.prototype.nodeInfo = function(d) {
       var thisGraph = this;
 
@@ -278,6 +267,7 @@
       )
     }
 
+    //Gets average course sizes and terms offered over the last 4 years for specific course
     my.GraphCreator.prototype.getCourseHistory = function(d) {
       var thisGraph = this,
         history = {
@@ -303,6 +293,7 @@
       return history;
     }
 
+    //Generate html showing data recieved from getCourseHistory
     my.GraphCreator.prototype.courseHistory = function(d) {
       var thisGraph = this,
         history = thisGraph.getCourseHistory(d), outputHtml = '',
@@ -317,6 +308,7 @@
       return outputHtml;
     }
 
+    //Creates html showing the prerequites for a given course
     my.GraphCreator.prototype.courseRequirements = function(d) {
       var thisGraph = this,
         reqString = '';
@@ -358,48 +350,6 @@
       })
 
       return reqString === '' ? 'None' : reqString;
-    }
-
-    my.GraphCreator.prototype.deleteSelectedPaths = function(){
-      var thisGraph = this;
-      var state = thisGraph.state;
-      var selectedEdges = state.selectedEdges;
-
-      if(selectedEdges.length){
-        thisGraph.state.selectedEdges.forEach(function(edge){
-          var targetIdx = thisGraph.findNodeIndex(edge.target);
-          var reqIdx = edge.target.course.findRequirementIndex(edge.target.course.course_subj_code,
-            edge.target.course.course_num);
-
-          if(thisGraph.helper.isArray(reqIdx))
-            thisGraph.nodes[targetIdx].course.requirements[reqIdx[0]].splice(reqIdx[1],1);
-          else
-            thisGraph.nodes[targetIdx].course.requirements.splice(reqIdx,1);
-
-          thisGraph.edges.splice(thisGraph.edges.indexOf(edge), 1);
-        });
-
-        thisGraph.state.selectedEdges = [];
-        thisGraph.updateGraph();
-      }
-    }
-
-    my.GraphCreator.prototype.deleteSelectedNodes = function(){
-      var thisGraph = this;
-      var state = thisGraph.state;
-      var selectedNodes = state.selectedNodes;
-
-      d3.event.preventDefault();
-
-      if (selectedNodes.length && window.confirm('Are you sure you want to delete the selected courses?')){
-        selectedNodes.forEach(function(selectedNode){
-          thisGraph.nodes.splice(thisGraph.nodes.indexOf(selectedNode), 1);
-          thisGraph.spliceLinksForNode(selectedNode);
-        });
-
-        state.selectedNodes = [];
-        thisGraph.updateGraph();
-      }
     }
 
     return my;
