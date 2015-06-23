@@ -1,5 +1,14 @@
 :javascript
+  //This file contains function that perform common graph operations
+  //Note that the adjacecy lists are json objects that have 'reversed'
+  //and 'directed' attributes.  The 'directed' attribute is an adjacency
+  //list corresponding the shown directed graph and the 'reversed' attribute
+  //is also an adjacency list corresponding to the shown graph except for
+  //that the directed edges are reversed. The keys of the two seperate adjacency
+  //list are nodes' ids stringified and each key points to an array of stringified
+  //ids corresponding to the node it shares an edge with.  
   var MODULE = (function(my){
+    //Breath first search
     my.GraphCreator.prototype.BFS = function(adjList,d){
       var thisGraph = this, myQueue = new Array(), visited = {}, 
         sourceId = d.id.toString(), numDependents = 0;
@@ -79,5 +88,216 @@
 
       return data;
     }
+
+    my.GraphCreator.prototype.testForceLayout = function() {
+      var thisGraph = this;
+      var centerX = thisGraph.svgWidth / 2;
+      var centerY = thisGraph.svgHeight / 2;
+      var adjList = {};
+
+      thisGraph.nodes.forEach(function(d,i){
+        thisGraph.nodes[i].x = centerX;
+        thisGraph.nodes[i].y = centerY;
+        adjList[d.id.toString()] = [];
+      });
+
+      thisGraph.edges.forEach(function(edge){
+        var prereqIdStr = edge.source.id.toString(),
+          idStr = edge.target.id.toString();
+
+        adjList[idStr].push(prereqIdStr);
+      });
+
+      thisGraph.nodes.forEach(function(d,i){
+        thisGraph.nodes[i].mpqs = thisGraph.minimumPriorQuarters.call(thisGraph,d,adjList);
+      });
+
+      thisGraph.paths = thisGraph.paths.data(thisGraph.edges, function(d){
+        return String(d.source.id) + "+" + String(d.target.id);
+      });
+      
+      thisGraph.paths.attr("d", function(d){
+        return "M" + d.source.x + "," + d.source.y + "L" + d.target.x + "," + d.target.y;
+      });
+
+      thisGraph.circles = thisGraph.circles.data(thisGraph.nodes, function(d){ return d.id;});
+      thisGraph.circles.attr("transform", function(d){return "translate(" + d.x + "," + d.y + ")";});
+
+      thisGraph.forceLayout();
+    }
+
+    my.GraphCreator.prototype.forceLayout = function() {
+      var thisGraph = this;
+      var r = thisGraph.nodeRadius, width = thisGraph.svgWidth, height = thisGraph.svgHeight,
+        centers = [width/24, width/8, 5*width/24,7*width/24,3*width/8,11*width/24,13*width/24,
+          5*width/3,17*width/24,19*width/24,7*width/8,23*width/24];
+
+      var max = 0;
+      for(var i = 0; i < thisGraph.nodes.length; i++)
+        if(thisGraph.nodes[i].mpqs > max)
+          max = thisGraph.nodes[i].mpqs;
+
+
+      function tick(e){
+        var k = e.alpha;
+        thisGraph.nodes.forEach(function(d,i){
+          var center;
+          /*
+          if(d.mpqs <= 1) center = centers[0];
+          else if(d.mpqs <= 3) center = centers[1];
+          else if(d.mpqs <= 6) center = centers[2];
+          else center = centers[3];
+          */
+          d.x += (centers[d.mpqs] - d.x) * k;
+          thisGraph.nodes[i].x = Math.max(2*r, Math.min(width - 2*r, d.x));
+          thisGraph.nodes[i].y = Math.max(2*r, Math.min(height - 2*r, d.y));
+        });
+
+        thisGraph.paths = thisGraph.paths.data(thisGraph.edges, function(d){
+          return String(d.source.id) + "+" + String(d.target.id);
+        });
+        
+        thisGraph.paths.attr("d", function(d){
+          return "M" + d.source.x + "," + d.source.y + "L" + d.target.x + "," + d.target.y;
+        });
+
+        thisGraph.circles = thisGraph.circles.data(thisGraph.nodes, function(d){ return d.id;});
+        thisGraph.circles.attr("transform", function(d){return "translate(" + d.x + "," + d.y + ")";})
+      }
+
+      thisGraph.force = d3.layout.force()
+        .size([width, height])
+        .nodes(thisGraph.nodes)
+        .links(thisGraph.edges)
+        .linkDistance(250)
+        .linkStrength(0.4)
+        .charge(-1000)
+        .chargeDistance(800)
+        .on("tick", tick);
+
+      thisGraph.force.start();
+      setTimeout(function(){ thisGraph.force.stop() }, 10000);
+    }
+
+    my.GraphCreator.prototype.drawGraph = function() {
+      var thisGraph = this;
+
+      thisGraph.rank();
+      thisGraph.ordering();
+      thisGraph.position();
+      thisGraph.makeSplines();
+    }
+
+    my.GraphCreator.prototype.rank = function() {
+      var thisGraph = this, e = null;
+
+      thisGraph.feasibleTree();
+      e = thisGraph.leaveEdge();
+      while(e){
+        var f = thisGraph.enterEdge(e);
+        thisGraph.exchange(e,f);
+      }
+      thisGraph.normalize();
+      thisGraph.balance();
+    }
+
+    my.GraphCreator.prototype.feasibleTree = function() {
+      var thisGraph = this;
+
+      thisGraph.initRank();
+      while(thisGraph.tightTree() < thisGraph.nodes.length){
+        //var e = // a non-tree edge incident on the tree with a minimum amount of slack
+        var dela = thisGraph.slack(e);
+
+      }
+    }
+
+    my.GraphCreator.prototype.initRank = function() {
+      var thisGraph = this;
+
+      for(var i = 0; i < thisGraph.nodes.length; i++){
+        thisGraph.nodes[i].rank = thisGraph.nodes[i].mpqs;
+      }
+    }
+
+    my.GraphCreator.prototype.placeNodes = function() {
+      var thisGraph = this, max = 0, buckets, targetAvg;
+
+      //find max minimum prior quarters
+      for(var i = 0; i < thisGraph.nodes.length; i++)
+        if(max < thisGraph.nodes[i].mpqs)
+          max = thisGraph.nodes[i].mpqs;
+
+      //Ideal size of each bucket
+      targetAvg = Math.ceil(thisGraph.nodes.length / (max + 1));
+
+      buckets = new Array(max+1);
+
+      for(var i = 0; i <= max; i++)
+        buckets[i] = [];
+
+      //initialize buckets
+      for(var i = 0; i < thisGraph.nodes.length; i++){
+        buckets[thisGraph.nodes[i].mpqs].push(thisGraph.nodes[i]);
+        buckets[thisGraph.nodes[i].mpqs][buckets[thisGraph.nodes[i].mpqs].length - 1].ind = i;
+      }
+
+      /*
+      function bucketTooLong(i){ return buckets[i].length > 1.3*targetAvg }
+      function bucketTooShort(i){ return buckets[i].length < 0.7*targetAvg }
+      function invalidBucketLength(i){ return bucketTooShort(i) || bucketTooLong(i) }
+      function shiftBucketElements(buckets, i) {
+        var indsToSplice = [];
+        var iter = 0;
+
+        while(invalidBucketLength(i) && iter < 10){
+          for(var j = 0; j < buckets[i].length; j++){
+            if(buckets[i][j].mpqs === i){
+              if(i > 0 && i < max && buckets[i - 1].length < buckets[i + 1].length && !bucketTooLong(i-1)){
+                indsToSplice.push(j);
+                buckets[i-1].push(buckets[i][j]);
+              }else if(i < max && i > 0 && buckets[i+1].length < buckets[i-1].length && !bucketTooLong(i+1)){
+                indsToSplice.push(j);
+                buckets[i+1].push(buckets[i][j]);                
+              }else if(i > 0 && !bucketTooLong(i-1)){
+                indsToSplice.push(j);
+                buckets[i-1].push(buckets[i][j]);
+              }else if(i < max && !bucketTooLong(i+1)){
+                indsToSplice.push(j);
+                buckets[i+1].push(buckets[i][j]);                
+              } else break;
+
+              indsToSplice.push(j);
+            }
+          }
+
+          buckets[i] = thisGraph.helper.spliceMultInds(buckets[i],indsToSplice);
+          iter++;
+        }
+
+        return buckets;
+      } 
+    
+      for(var i = 0; i <= max; i++) buckets = shiftBucketElements(buckets, i);
+      for(var i = max; i >= 0; i--) buckets = shiftBucketElements(buckets, i);
+      */
+      thisGraph.setNodeCoords(buckets);
+    }
+
+    my.GraphCreator.prototype.setNodeCoords = function(buckets){
+      var thisGraph = this, width = this.svgWidth, height = this.svgHeight;
+      var partitionSizeX = width / (buckets.length + 1);
+
+      for(var i = 0; i < buckets.length; i++){
+        var partitionSizeY = (height - 2*thisGraph.nodeRadius) / buckets[i].length;
+        for(var j = 0; j < buckets[i].length; j++){
+          thisGraph.nodes[buckets[i][j].ind].y = (height / 2) + (Math.floor((j+1)/2)*Math.pow(-1,j))*partitionSizeY;
+          thisGraph.nodes[buckets[i][j].ind].x = partitionSizeX*(i + 1);
+        }
+      }
+
+      thisGraph.updateGraph();
+    }
+
     return my;
   })(MODULE || {});

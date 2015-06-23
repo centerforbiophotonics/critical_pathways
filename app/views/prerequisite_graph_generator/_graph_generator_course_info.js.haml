@@ -83,14 +83,16 @@
 
     //Called when prereq form is submitted.  Saves prereq information 
     //until it is saved when the node's smallipop form is submitted
-    my.GraphCreator.prototype.setPrereqContainer = function(node,prereqs){
+    my.GraphCreator.prototype.setPrereqContainer = function(node,prereqs,additionalNotes){
       this.prereqContainer.node = node;
       this.prereqContainer.prereqs = prereqs;
+      this.prereqContainer.additionalNotes = additionalNotes;
     }
 
     my.GraphCreator.prototype.clearPrereqContianer = function(){
       this.prereqContainer.node = null;
       this.prereqContainer.prereqs = [];
+      this.prereqContainer.additionalNotes = '';
     }
 
     //Set prerequisites for course when prereq form and node form are both submitted
@@ -102,7 +104,7 @@
         optionGroup = [], currentNode,
         group, prereqIdx = 0;
 
-
+      thisGraph.nodes[idx].course.additionalNotes = thisGraph.prereqContainer.additionalNotes;
       thisGraph.removeEdges();
       //Get all nodes to the left of the node
       var leftNodes = thisGraph.nodes.filter(function(d){ return d.x <= node.x });
@@ -263,7 +265,8 @@
         '</p>' +
         '<p style="text-align: left"><strong>Prerequisites</strong>: '+
         thisGraph.courseRequirements(d) +
-        '</p>'
+        '</p>'+
+        (d.course.additionalNotes ? '<p style="text-align: left"><strong>Additional Notes</strong>: '+ d.course.additionalNotes + '</p>' : '')
       )
     }
 

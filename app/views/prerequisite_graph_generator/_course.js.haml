@@ -1,10 +1,11 @@
 :javascript
 
-  var Course = function(course_subj_code,course_num,ctitle,units,requirements,times_offered) {
+  var Course = function(course_subj_code,course_num,ctitle,units,requirements,additionalNotes,times_offered) {
     this.course_subj_code = course_subj_code || null;
     this.course_num = course_num || null;
     this.ctitle = ctitle || null;
     this.units = units || course_subj_code && course_num ? course_data[course_subj_code][course_num]['units'] : null;
+    this.additionalNotes = additionalNotes || '';
     this.requirements = requirements || [];
     this.times_offered = times_offered || null;
   }
@@ -45,6 +46,7 @@
       ctitle: this.ctitle,
       units: this.units,
       requirements: this.requirements,
+      additionalNotes: this.additionalNotes,
       times_offered: this.times_offered
     }
   }

@@ -10,6 +10,10 @@
     });
   }
 
+  Helper.prototype.alphaNumericCmp = function(a, b){
+    return a.split(' ').join('').toLowerCase() === b.split(' ').join('').toLowerCase();
+  }
+
   Helper.prototype.alphabeticalCmp =  function(a, b) {
     var A = a.text.toLowerCase().split('');
     var B = b.text.toLowerCase().split('');
@@ -27,4 +31,14 @@
       return 1;
 
     return 0;
+  }
+
+  Helper.prototype.numDigits = function(str){
+    var strArray = str.split(''), numDigits = 0;
+
+    for(var i = 0; i < strArray.length; i++)
+      if(!(strArray[i] >= "0" && strArray[i] <= "9"))
+        break;
+
+    return i;
   }

@@ -17,7 +17,7 @@
         thisGraph.updateGraph();
       }
     }
-    
+
     my.GraphCreator.prototype.findNodeIndex = function(d) {
       var thisGraph = this;
 
@@ -27,6 +27,18 @@
 
       //Node not found
       return -1;      
+    }
+
+    my.GraphCreator.prototype.searchByCourse = function(course_subj_code, course_num, _nodes){
+      var thisGraph = this;
+      var nodes = _nodes || thisGraph.nodes;
+
+      console.log('_nodes',_nodes);
+      for(var i = 0; i < nodes.length; i++)
+        if(thisGraph.helper.alphaNumericCmp(nodes[i].title,course_subj_code+course_num))
+          return i;
+
+      return -1;
     }
 
     /* select all text in element: taken from http://stackoverflow.com/questions/6139107/programatically-select-text-in-a-contenteditable-html-element */

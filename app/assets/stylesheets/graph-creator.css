@@ -46,7 +46,7 @@ body{
     cursor: pointer;
 }
 
-#hidden-file-upload{
+#hidden-file-upload-csv, #hidden-file-upload-json{
     display: none;
 }
 

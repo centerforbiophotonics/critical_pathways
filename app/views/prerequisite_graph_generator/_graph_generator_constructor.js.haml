@@ -39,7 +39,8 @@
 
       thisGraph.prereqContainer = {
         node: null,
-        prereqs: []
+        prereqs: [],
+        additionalNotes: ''
       }
 
       thisGraph.deleteForm = false;
@@ -283,11 +284,23 @@
 
       // handle uploaded data
       d3.select("#upload-input").on("click", function(){
-        document.getElementById("hidden-file-upload").click();
+        $("#upload_div").slideToggle();
       });
 
-      d3.select("#hidden-file-upload").on("change", function(){
-        thisGraph.uploadGraphHandler.call(this,thisGraph);
+      d3.select("#upload_graph").on("click", function(){
+        document.getElementById("hidden-file-upload-json").click();
+      });
+
+      d3.select("#upload_prereq_info").on("click", function(){
+        document.getElementById("hidden-file-upload-csv").click();
+      });
+
+      d3.select("#hidden-file-upload-json").on("change", function(){
+        thisGraph.uploadGraphHandler.call(thisGraph,this.files[0]);
+      });
+
+      d3.select("#hidden-file-upload-csv").on("change", function(){
+        thisGraph.uploadCsv.call(thisGraph,this.files[0]);
       });
 
       // handle delete graph

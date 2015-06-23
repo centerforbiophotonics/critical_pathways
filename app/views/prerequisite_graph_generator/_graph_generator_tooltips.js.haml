@@ -160,6 +160,13 @@
         units = course_data[course_subj_code][course_num]['units'],
         ctitle = course_data[course_subj_code][course_num]['ctitle'];
 
+      //Check if course is already taken
+      for(var i = 0; i < thisGraph.nodes.length; i++)
+        if(thisGraph.nodes[i].course.isSameCourse(course_subj_code, course_num) && thisGraph.nodes[i].id !== d.id){
+          alert('Duplicate courses are not allowed');
+          return false;
+        }
+
       //Find node to be updated
       for(idx = 0; idx < thisGraph.nodes.length; idx++) {
         if(thisGraph.nodes[idx].id === d.id)

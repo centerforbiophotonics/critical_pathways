@@ -15,11 +15,24 @@
 }
 */
 
-#download_div {
+#download_div, #upload_div {
   padding: 1em;
   border: 2px solid rgb(238, 238, 238);
   border-radius: 5px;
   display: none;
+}
+
+input[type=text] {
+  padding: 0;
+  height: 30px;
+  position: relative;
+  left: 0;
+  outline: none;
+  border: 1px solid #cdcdcd;
+  border-color: rgba(0,0,0,.15);
+  background-color: white;
+  border-radius: 3px;
+  font-size: 16px;
 }
 
 .myButton {
@@ -60,8 +73,8 @@
   background-color:#e9e9e9;
 }
 
-.myButton:focus, .formSelect {
-  box-shadow: 0 0 0 2pt #999 !important;
+.myButton:focus, .formSelect, input[type=text]:focus {
+  box-shadow: 0 0 0 2pt #999fff !important;
 }
 
 .myButton:active {

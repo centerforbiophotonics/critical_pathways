@@ -3,15 +3,16 @@
     my.GraphCreator.prototype.downloadCourseInfoHandler = function(){
       var thisGraph = this;
       var years = 4;
-      var headers = ["Course","Fall Offerings","Fall Avg Size","Winter Offerings","Winter Avg Size",
-        "Spring Offerings","Spring Avg Size","Summer Sessoin 1 Offerings","Summer Session 1 Avg Size",
-        "Summer Session 2 Offerings", "Summer Session 2 Avg Size", "Special Summer Session Offerings",
-        "Special Summer Session Avg Size", "Extra Session Offerings", "Extra Session Avg Size",
-        "Summer Quarter Offerings","Summer Quarter Avg Size","Min Prior Quarters","Number Dependent Courses"];
+      var headers = ["Course","Fall Offerings (Out of 4)","Fall Avg Size","Winter Offerings (Out of 4)","Winter Avg Size",
+        "Spring Offerings (Out of 4)","Spring Avg Size","Summer Sessoin 1 Offerings (Out of 4)","Summer Session 1 Avg Size",
+        "Summer Session 2 Offerings (Out of 4)", "Summer Session 2 Avg Size", "Special Summer Session Offerings (Out of 4)",
+        "Special Summer Session Avg Size", "Extra Session Offerings (Out of 4)", "Extra Session Avg Size",
+        "Summer Quarter Offerings (Out of 4)","Summer Quarter Avg Size","Min Prior Quarters","Number Dependent Courses"];
       var adjList = {'directed':{}, 'reversed':{}}
       var courseInfo = [headers];
       var terms = ['fall', 'winter','spring','summer1', 'summer2','summer_special','summer_extra', 'summer_quarter'];
 
+      //Initialize adjacency list for graph in forward and reverse directions
       thisGraph.nodes.forEach(function(d){
         var id = d.id.toString();
         adjList['directed'][id] = [];
@@ -32,13 +33,15 @@
         var termMap = history.term_map;
 
         terms.forEach(function(term){
-          thisCourse.push(history.offerings[term] + ' out of ' + years);
+          thisCourse.push(history.offerings[term]);
           thisCourse.push(Math.round(history.size[term]/history.offerings[term]));
         });
 
+        //Get minimum number of quarters that must be taken in order to take this course
         var minPriorQuarters = thisGraph.minimumPriorQuarters.call(thisGraph,d,adjList['reversed']);
         thisCourse.push(minPriorQuarters);  
 
+        //Get the number of courses for which this is a prereq (does not need to be direct)
         var numDependentCourses = thisGraph.BFS(adjList['directed'],d);
         thisCourse.push(numDependentCourses);
         courseInfo.push(thisCourse);
@@ -88,9 +91,9 @@
         saveAs(blob, filename+".json");
     }
 
-    my.GraphCreator.prototype.uploadGraphHandler = function(thisGraph){
+    my.GraphCreator.prototype.uploadGraphHandler = function(uploadFile){
+      var thisGraph = this;
       if (window.File && window.FileReader && window.FileList && window.Blob) {
-        var uploadFile = this.files[0];
         var filereader = new window.FileReader();
         
         filereader.onload = function(){
@@ -137,6 +140,145 @@
         filereader.readAsText(uploadFile);    
       } else {
         alert("Your browser won't let you save this graph -- try upgrading your browser to IE 10+ or Chrome or Firefox.");
+      }
+    }
+
+
+    my.GraphCreator.prototype.uploadCsv = function(uploadFile) {
+      var thisGraph = this;
+      if (window.File && window.FileReader && window.FileList && window.Blob) {
+        console.log("hello");
+        var filereader = new window.FileReader();
+
+        filereader.onload = function(){
+          var txtRes = filereader.result;
+
+          try {
+            var csvRows = txtRes.split('\n'), csvData = [], optionalGroups = [],
+              nodes = [], edges = [], adjList = {}, centerX = thisGraph.svgWidth / 2,
+              centerY = thisGraph.svgHeight / 2, idct = thisGraph.idct,edgeGrp = thisGraph.edgeGrp;
+
+            csvRows.forEach(function(r, i){ 
+              csvData[i] = csvRows[i].split(',');
+
+              if((csvData[i].length % 2) !== 1) throw "Row "+(i+1)+" has an invalid number of entries"
+
+              csvData[i].forEach(function(c,j){ csvData[i][j] = csvData[i][j].trim() })
+
+              function initNodeData(data, idx){
+                console.log(data);
+                var course_subj_code = data[idx].split(' ')[0],
+                  course_num = data[idx].split(' ')[1];
+                var numDigits = thisGraph.helper.numDigits(course_num);
+
+                if(numDigits === 0) throw "Invalid field in row "+(i+1)+"- course has no number"
+                else if(numDigits === 1) course_num = '00'+course_num;
+                else if(numDigits === 2) course_num = '0' + course_num;
+
+                data[idx] = course_subj_code + ' ' + course_num;
+
+                var nodeIdx = thisGraph.searchByCourse(course_subj_code,course_num,nodes);
+
+                //First prereq entry for this node
+                if(nodeIdx === -1){ 
+                  nodes[idct] = new Node(idct,centerX,centerY,
+                    {course_subj_code: course_subj_code, course_num: course_num, ctitle: course_data[course_subj_code][course_num]['ctitle']});
+                  nodeIdx = idct++;
+                }
+
+                return {
+                  csvData: data, 
+                  course_subj_code: course_subj_code, 
+                  course_num: course_num, 
+                  nodeIdx: nodeIdx
+                }
+              }
+
+              function parseReqType(reqString){
+                var reqType = null;
+                reqString = reqString.split(' ').join('').toLowerCase();
+
+                switch(reqString) {
+                  case 'prerequisite':
+                    reqType = RelationshipType['PREREQ'];
+                    break;
+                  case 'maybeconcurrent':
+                    reqType = RelationshipType['COREQ'];
+                    break;
+                  case 'mustbeconcurrent':  
+                    reqType = RelationshipType['COREQ_STRICT'];
+                    break;
+                  case 'recommended':
+                    reqType = RelationshipType['RECOMMENDED']; 
+                    break;
+                  default:
+                    throw "Invalid Prerequisite Type";
+                    break;       
+                }
+
+                return reqType;
+              }
+
+              var nodeData = initNodeData(csvData[i],0);
+
+              if(csvData[i].length === 3){
+                var prereqData = initNodeData(csvData[i],1);
+                var reqType = parseReqType(csvData[i][2]);
+                var idStr = nodes[nodeData.nodeIdx].id.toString();
+                var prereqIdStr = nodes[prereqData.nodeIdx].id.toString();
+
+                nodes[nodeData.nodeIdx].course.requirements.push(
+                  {node: nodes[prereqData.nodeIdx], requirement_type: reqType});
+                console.log(reqType);
+                edges.push(new Edge(nodes[prereqData.nodeIdx],nodes[nodeData.nodeIdx],reqType,edgeGrp++,false));
+                adjList[idStr] = adjList[idStr] ? adjList[idStr].concat([prereqIdStr]) : [prereqIdStr];
+              }else{
+                var prereqs = [];
+                var group = edgeGrp++;
+                for(var j = 1;j < csvData[i].length; j += 2){
+                  var prereqData = initNodeData(csvData[i],j);
+                  var reqType = parseReqType(csvData[i][j+1]);
+                  var idStr = nodes[nodeData.nodeIdx].id.toString();
+                  var prereqIdStr = nodes[prereqData.nodeIdx].id.toString();
+
+                  prereqs.push({node: nodes[prereqData.nodeIdx], requirement_type: reqType});
+                  edges.push(new Edge(nodes[prereqData.nodeIdx],nodes[nodeData.nodeIdx],reqType,group,true));
+                  adjList[idStr] = adjList[idStr] ? adjList[idStr].concat([prereqIdStr]) : [prereqIdStr];
+                }
+                nodes[nodeData.nodeIdx].course.requirements.push(prereqs);
+                optionalGroups.push(group);
+              }
+
+            });
+
+            
+            nodes.forEach(function(d,i){
+              var idStr = d.id.toString();
+              if(!adjList[idStr])
+                adjList[idStr] = [];
+            })
+
+            thisGraph.nodes = nodes;
+            thisGraph.edges = edges;
+            thisGraph.optionalGroups = optionalGroups;
+            thisGraph.idct = idct;
+            thisGraph.edgeGrp = edgeGrp;
+
+            thisGraph.nodes.forEach(function(d,i){
+              thisGraph.nodes[i].mpqs = thisGraph.minimumPriorQuarters.call(thisGraph,d,adjList);
+            });
+
+            thisGraph.updateGraph();
+            thisGraph.placeNodes();
+            //thisGraph.forceLayout();
+
+            return;
+          }catch(err){
+            window.alert("Error parsing uploaded file\nerror message: " + err.message);
+            return;
+          }
+        }
+        filereader.readAsText(uploadFile); 
       }
     }
 

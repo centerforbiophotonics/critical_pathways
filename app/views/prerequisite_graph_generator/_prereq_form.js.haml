@@ -243,6 +243,7 @@
       });
         
       $('.blockUI.blockMsg').addClass('myBlockUI');
+      $("#additionalNotes").val(node.course.additionalNotes);
 
       if(!thisForm.formHtml && node.course.requirements.length === 0){
         //New set of requirements
@@ -293,14 +294,12 @@
       valid = true,
       course = null,
       prereqs = [],
+      additionalNotes = $("#additionalNotes").val(),
       course_defined = thisForm.node.course.course_subj_code != null 
         && thisForm.node.course.course_num != null;
 
-    if(course_defined){
-      course = thisForm.node.course;
-    }
+    if(course_defined) course = thisForm.node.course;
 
-    console.log('prereqFormIds',thisForm.prereqFormIds);
     thisForm.prereqFormIds.forEach(function(requirement, reqId){
       if(valid){
         prereqs[prereqs.length] = [];
@@ -340,7 +339,7 @@
     if(valid){
       console.log(prereqs);
       thisForm.formHtml = $('.prereq_form');
-      thisForm.callback.call(thisForm.objRef,thisForm.node,prereqs);
+      thisForm.callback.call(thisForm.objRef,thisForm.node,prereqs, additionalNotes);
       $.unblockUI({
         onUnblock: function(){ $("#change_course").focus() }
       });
@@ -374,6 +373,10 @@
       $('#closeButtonContainer').html() +
        thisForm.generatePrereqForm() +
       '<div id="select2parent" style="display: none"></div>'+
+      '<div class="prereqDiv">'+
+        '<label for="additionalNotes">Additional Notes: </label>'+
+        '<input type="text" id="additionalNotes"></text>'+
+      '</div>'+
       '<button class="myButton" id="save_prereqs" style="margin: 5px">Save Prerequisites</button>'+
       '</div>'
     );
