@@ -64,26 +64,44 @@
         selectedText: null
       };
 
-      thisGraph.menu = [
-        {
-          title: 'Delete Selected Nodes',
-          action: function(elm, d, i){
-            thisGraph.contextMenuDeleteNodes.call(thisGraph);
+      thisGraph.menus = {
+        default: [
+          {
+            title: 'Delete Selected Nodes',
+            action: function(elm, d, i){
+              thisGraph.contextMenuDeleteNodes.call(thisGraph);
+            }
+          },
+          {
+            title: 'Delete Selected Paths',
+            action: function(elm, d, i){
+              thisGraph.contextMenuDeletePaths.call(thisGraph);
+            }
+          },
+          {
+            title: 'Group Selected Paths',
+            action: function(elm, d, i){
+              thisGraph.contextMenuGroupPaths.call(thisGraph);
+            }
           }
-        },
-        {
-          title: 'Delete Selected Paths',
-          action: function(elm, d, i){
-            thisGraph.contextMenuDeletePaths.call(thisGraph);
+        ],
+        path: [
+          {
+            title: 'Toggle Allow/Forbid Gap',
+            action: function(elm, d, i) {
+              thisGraph.contextMenuToggleGapAllowed.call(thisGraph, d);
+            }
           }
-        },
-        {
-          title: 'Group Selected Paths',
-          action: function(elm, d, i){
-            thisGraph.contextMenuGroupPaths.call(thisGraph);
+        ],
+        circle: [
+          {
+            title: 'Open Course Form',
+            action :function(elm, d, i) {
+              console.log(elm, d);
+            }
           }
-        }
-      ]
+        ]
+      }
 
       // define arrow markers for graph links
       var defs = svg.append('svg:defs');
@@ -226,7 +244,8 @@
         thisGraph.svgKeyUp.call(thisGraph);
       });
       //Listen for right click to open context menu
-      svg.on('contextmenu', d3.contextMenu(thisGraph.menu));
+
+      svg.on('contextmenu', d3.contextMenu(thisGraph.menus));
 
       svg.on("mousedown", function(){
         if(d3.event.button !== 0) return false;
@@ -281,6 +300,9 @@
         thisGraph.downloadGraphHandler.call(thisGraph);
       });
 
+      d3.select("#save_image").on("click", function(){
+        thisGraph.saveImageHandler.call(thisGraph);
+      })
 
       // handle uploaded data
       d3.select("#upload-input").on("click", function(){

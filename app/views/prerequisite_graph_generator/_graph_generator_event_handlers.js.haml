@@ -142,6 +142,20 @@
       else
         alert('No courses selected');
     }
+
+    my.GraphCreator.prototype.contextMenuToggleGapAllowed = function(d) {
+      var thisGraph = this, idx = thisGraph.findEdgeIndex(d.source,d.target);
+
+      thisGraph.edges[idx].maxGap = d.maxGap ? null : 1;
+
+      var node = thisGraph.nodes[thisGraph.findNodeIndex(d.target)];
+      var reqIdx = node.course.findRequirementIndex(d.source.course.course_subj_code,d.source.course.course_num);
+
+      if(thisGraph.helper.isArray(reqIdx)) node.course.requirements[reqIdx[0]][reqIdx[1]].maxGap = thisGraph.edges[idx].maxGap;
+      else node.course.requirements[reqIdx].maxGap = thisGraph.edges[idx].maxGap;
+
+      return thisGraph.edges[idx].maxGap;
+    }
     /* End of Context Menu Event Handlers */
 
     my.GraphCreator.prototype.dragmove = function(d,eThis) {

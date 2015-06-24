@@ -14,6 +14,7 @@
       thisGraph.paths = thisGraph.paths.data(thisGraph.edges, function(d){
         return String(d.source.id) + "+" + String(d.target.id);
       });
+
       var paths = thisGraph.paths;
       // update existing paths
       paths.style('marker-end', 'url(#end-arrow)')
@@ -46,6 +47,7 @@
         .attr("d", function(d){
           return "M" + d.source.x + "," + d.source.y + "L" + d.target.x + "," + d.target.y;
         })
+        .on('contextmenu', d3.contextMenu(thisGraph.menus))
         .on("mousedown", function(d){
           if(d3.event.button !== 0) return false;
           thisGraph.pathMouseDown.call(thisGraph, d3.select(this), d);
@@ -82,6 +84,7 @@
       newGs.classed(consts.circleGClass, true)
         .attr("transform", function(d){return "translate(" + d.x + "," + d.y + ")";})
         .attr("id",function(d){ return "node"+d.id})
+        .on('contextmenu', d3.contextMenu(thisGraph.menus))
         .on("mouseover", function(d){     
           if(!($("#smallipop_form").length) && !($("#node"+d.id+"div").length) && thisGraph.state.mouseDownNode === null){
             var radius = thisGraph.nodeRadius,

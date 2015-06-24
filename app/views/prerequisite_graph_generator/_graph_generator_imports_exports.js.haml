@@ -91,6 +91,11 @@
         saveAs(blob, filename+".json");
     }
 
+    my.GraphCreator.prototype.saveImageHandler = function(){
+      var thisGraph = this;
+
+    }
+
     my.GraphCreator.prototype.uploadGraphHandler = function(uploadFile){
       var thisGraph = this;
       if (window.File && window.FileReader && window.FileList && window.Blob) {
@@ -127,7 +132,7 @@
             tempEdges.forEach(function(e, i){
               newEdges[i] = new Edge(thisGraph.nodes.filter(function(n){return n.id === e.source.id;})[0],
                               thisGraph.nodes.filter(function(n){return n.id === e.target.id;})[0],
-                              e.type,e.group,e.optional);
+                              e.type,e.group,e.optional,e.maxGap);
             });
             thisGraph.optionalGroups = jsonObj.optionalGroups;
             thisGraph.edges = newEdges;

@@ -1,6 +1,6 @@
 :javascript
 
-  var Edge = function(source, target, type, group,optional){
+  var Edge = function(source, target, type, group, optional, maxGap){
     if(source === undefined || target === undefined){
       console.log("SOURCE OR TARGET NOT SPECIFIED");
       return null;
@@ -11,7 +11,7 @@
     this.type = type || RelationshipType.PREREQ;
     this.optional = optional || false;
     this.group = group === undefined ? null : group;
-
+    this.maxGap = maxGap ? maxGap : null;
   }
 
   Edge.prototype.getSourceAndTarget = function() {
@@ -32,6 +32,7 @@
       target: this.target.toJson(),
       type: this.type,
       optional: this.optional,
-      group: this.group
+      group: this.group,
+      maxGap: this.maxGap
     };
   }

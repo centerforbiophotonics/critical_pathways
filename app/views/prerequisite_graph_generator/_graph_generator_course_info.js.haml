@@ -139,7 +139,7 @@
                   if(optIdx === 0) 
                     group = thisEdge.group;
 
-                  thisGraph.addNewPrereq(idx,currentNode,prereq.requirement_type,prereq_list,prereqIdx,optIdx);
+                  thisGraph.addNewPrereq(idx,currentNode,prereq.requirement_type,prereq_list,prereqIdx,optIdx,prereq.maxGap);
                 }
                 break;
               }
@@ -147,7 +147,7 @@
             if(!course_found){
               var coords = thisGraph.findSpaceForNode(node, leftNodes);
               var d = new Node(thisGraph.idct++,coords[0],coords[1],prereq);
-              thisGraph.addNewPrereq(idx,d,prereq.requirement_type,prereq_list,prereqIdx,optIdx);
+              thisGraph.addNewPrereq(idx,d,prereq.requirement_type,prereq_list,prereqIdx,optIdx,prereq.maxGap);
 
               //Add this to the list of nodes we need to avoid when placing new nodes
               leftNodes.push(d);
@@ -172,9 +172,9 @@
     }
 
     //Adds a new prereq to a node course.requirements member
-    my.GraphCreator.prototype.addNewPrereq = function(idx, prereqNode,reqType,prereq_list,listIdx,optIdx) {
+    my.GraphCreator.prototype.addNewPrereq = function(idx, prereqNode,reqType,prereq_list,listIdx,optIdx,maxGap) {
       var thisGraph = this;
-      var newPrereq = {node: prereqNode, requirement_type: reqType};
+      var newPrereq = {node: prereqNode, requirement_type: reqType, maxGap: maxGap};
 
       //Build list of prereqs for this course
       if(prereq_list.length > 1 && optIdx === 0)
@@ -249,7 +249,7 @@
         $("#s2id_"+e.target.id+' a').addClass('formSelect');
       }).on('select2-blur',function(e){
         $("#s2id_"+e.target.id+' a').removeClass('formSelect');
-      });
+      }); 
     }
 
     //Generates the html that goes in the node mouseover tooltip
@@ -330,6 +330,7 @@
                 break;
             }
 
+
             if(j !== req.length - 1) 
               reqString += ' or ';
             else if(i !== d.course.requirements.length - 1)
@@ -346,6 +347,8 @@
               reqString += ' (must be taken concurrently)';
               break;
           }
+
+          if(req.maxGap) reqString += ' (must be taken in consecutive quarters)'
 
           if(i !== d.course.requirements.length - 1)
             reqString += ', ';
