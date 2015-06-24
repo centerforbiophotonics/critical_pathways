@@ -100,6 +100,7 @@
         thisForm.prereqCount--;
         thisForm.prereqFormIds[prereqId] = [];
         thisForm.nextPrereqIds[prereqId] = 0;
+
         //Center the now smaller form
         $('.blockUI.blockMsg').center();
       }
@@ -217,6 +218,9 @@
       node = thisForm.node,
       myCss =   {
         cursor: "pointer",
+        "overflow-y": "auto",
+        "overflow-x": "hidden",
+        "max-height": "95%"
       }
 
     if(thisForm.formHtml){
