@@ -47,7 +47,7 @@
         .attr("d", function(d){
           return "M" + d.source.x + "," + d.source.y + "L" + d.target.x + "," + d.target.y;
         })
-        .on('contextmenu', d3.contextMenu(thisGraph.menus))
+        .on('contextmenu', d3.contextMenu(thisGraph.menus.default.concat(thisGraph.menus.path)))
         .on("mousedown", function(d){
           if(d3.event.button !== 0) return false;
           thisGraph.pathMouseDown.call(thisGraph, d3.select(this), d);
@@ -84,7 +84,7 @@
       newGs.classed(consts.circleGClass, true)
         .attr("transform", function(d){return "translate(" + d.x + "," + d.y + ")";})
         .attr("id",function(d){ return "node"+d.id})
-        .on('contextmenu', d3.contextMenu(thisGraph.menus))
+        .on('contextmenu', d3.contextMenu(thisGraph.menus.default.concat(thisGraph.menus.circle)))
         .on("mouseover", function(d){     
           if(!($("#smallipop_form").length) && !($("#node"+d.id+"div").length) && thisGraph.state.mouseDownNode === null){
             var radius = thisGraph.nodeRadius,
@@ -196,6 +196,7 @@
       }
 
       this.updateGraph();
+      this.quarterDividers.updateAll(this.quarterDividers.getLabels(),svg);
       this.svgHeight = y;
       this.svgWidth = x;
     };

@@ -1,0 +1,15 @@
+:javascript
+  function Major(name,requirements){
+    this.name = name;
+    this.requirements = requirements || [];
+  }
+
+  Major.prototype.toJson = function(){
+    return {name: this.name, requirements: this.requirementsToJson() }
+  }
+
+  Major.prototype.requirementsToJson = function(){
+    var reqs = [];
+    this.requirements.forEach(function(r){ reqs.push(r.toJson()) });
+    return reqs;
+  }

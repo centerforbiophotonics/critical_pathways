@@ -49,6 +49,12 @@
         // we're in the same node
         if (state.justDragged) {
           // dragged, not clicked
+          if(state.snapToGrid){
+            var idx = thisGraph.findNodeIndex(d);
+            var divisionWidth = thisGraph.quarterDividers.getDivisionWidth();
+            thisGraph.nodes[idx].x = (divisionWidth / 2) + divisionWidth*Math.floor(d.x / divisionWidth);
+            thisGraph.updateGraph();
+          }
           state.justDragged = false;
         } else{
           // clicked, not dragged
@@ -328,8 +334,14 @@
         state.justScaleTransGraph = false;
       } else if (state.graphMouseDown && d3.event.shiftKey && !thisGraph.state.selectionDragged){
         // clicked not dragged from svg
-        var xycoords = d3.mouse(thisGraph.svgG.node()),
-            d = new Node(thisGraph.idct++, xycoords[0], xycoords[1], {});
+        var xycoords = d3.mouse(thisGraph.svgG.node());
+
+        if(state.snapToGrid){
+          var divisionWidth = thisGraph.quarterDividers.getDivisionWidth();
+          xycoords[0] = (divisionWidth / 2) + divisionWidth*Math.floor(xycoords[0] / divisionWidth);
+        }
+
+        var d = new Node(thisGraph.idct++, xycoords[0], xycoords[1], {});
         thisGraph.nodes.push(d);
         thisGraph.updateGraph();
         thisGraph.createCourseSelect(thisGraph.circles.filter(function(dval){return dval.id == d.id}),d);

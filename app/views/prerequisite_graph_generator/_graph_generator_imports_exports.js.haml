@@ -92,8 +92,7 @@
     }
 
     my.GraphCreator.prototype.saveImageHandler = function(){
-      var thisGraph = this;
-
+      saveSvgAsPng(document.getElementById("graph_div").childNodes[0], "test.png");
     }
 
     my.GraphCreator.prototype.uploadGraphHandler = function(uploadFile){
@@ -235,7 +234,7 @@
                 nodes[nodeData.nodeIdx].course.requirements.push(
                   {node: nodes[prereqData.nodeIdx], requirement_type: reqType});
                 console.log(reqType);
-                edges.push(new Edge(nodes[prereqData.nodeIdx],nodes[nodeData.nodeIdx],reqType,edgeGrp++,false));
+                edges.push(new Edge(nodes[prereqData.nodeIdx],nodes[nodeData.nodeIdx],reqType,edgeGrp++,false,null));
                 adjList[idStr] = adjList[idStr] ? adjList[idStr].concat([prereqIdStr]) : [prereqIdStr];
               }else{
                 var prereqs = [];
@@ -247,7 +246,7 @@
                   var prereqIdStr = nodes[prereqData.nodeIdx].id.toString();
 
                   prereqs.push({node: nodes[prereqData.nodeIdx], requirement_type: reqType});
-                  edges.push(new Edge(nodes[prereqData.nodeIdx],nodes[nodeData.nodeIdx],reqType,group,true));
+                  edges.push(new Edge(nodes[prereqData.nodeIdx],nodes[nodeData.nodeIdx],reqType,group,true,null));
                   adjList[idStr] = adjList[idStr] ? adjList[idStr].concat([prereqIdStr]) : [prereqIdStr];
                 }
                 nodes[nodeData.nodeIdx].course.requirements.push(prereqs);
@@ -275,7 +274,6 @@
 
             thisGraph.updateGraph();
             thisGraph.placeNodes();
-            //thisGraph.forceLayout();
 
             return;
           }catch(err){

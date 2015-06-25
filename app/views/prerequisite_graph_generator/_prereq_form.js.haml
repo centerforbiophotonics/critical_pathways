@@ -103,6 +103,11 @@
 
         //Center the now smaller form
         $('.blockUI.blockMsg').center();
+      }else {
+        //last prereq
+        $("#course_subj_code_select_"+thisForm.currentPrereqId+'_'+optionId).select2("val",'');
+        $("#course_num_select_"+thisForm.currentPrereqId+'_'+optionId).select2("val",'');
+        $("#prereq_type_select_"+thisForm.currentPrereqId+'_'+optionId).select2("val",'');
       }
     })
 
@@ -314,14 +319,14 @@
           {
             var subj_code = $('#course_subj_code_select_'+reqId+'_'+option).val(),
               course_num = $('#course_num_select_'+reqId+'_'+option).val(),
-              ctitle = course_data[subj_code][course_num]['ctitle'],
-              units = course_data[subj_code][course_num]['units'],
               prereq_type = parseInt($('#prereq_type_select_'+reqId+'_'+option).val());
 
             if(subj_code === "" || course_num === "" || prereq_type === ""){
               alert('One or more fields have not been filled in');
               valid = false;
             }else {
+              var ctitle = course_data[subj_code][course_num]['ctitle'],
+                units = course_data[subj_code][course_num]['units'];
               if(course && course.course_subj_code === subj_code && course.course_num === course_num){
                 alert('A course cannot be a prerequisite for itself');
                 valid = false;
@@ -374,15 +379,15 @@
 
     return (
       '<div class="prereq_form">'+
-      '<h1>Define Prerequisites for this Course</h1>'+
-      $('#closeButtonContainer').html() +
-       thisForm.generatePrereqForm() +
-      '<div id="select2parent" style="display: none"></div>'+
-      '<div class="prereqDiv">'+
-        '<label for="additionalNotes">Additional Notes: </label>'+
-        '<input type="text" id="additionalNotes"></text>'+
-      '</div>'+
-      '<button class="myButton" id="save_prereqs" style="margin: 5px">Save Prerequisites</button>'+
+        '<h1>Define Prerequisites for this Course</h1>'+
+        $('#closeButtonContainer').html() +
+         thisForm.generatePrereqForm() +
+        '<div id="select2parent" style="display: none"></div>'+
+        '<div class="prereqDiv">'+
+          '<label for="additionalNotes">Additional Notes: </label>'+
+          '<input type="text" id="additionalNotes"></text>'+
+        '</div>'+
+        '<button class="myButton" id="save_prereqs" style="margin: 5px">Save Prerequisites</button>'+
       '</div>'
     );
   }

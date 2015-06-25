@@ -42,3 +42,7 @@
 
     return i;
   }
+
+  Helper.prototype.isFunction = function(x) {
+    return Object.prototype.toString.call(x) === '[object Function]';
+  }

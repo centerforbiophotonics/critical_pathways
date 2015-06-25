@@ -1,0 +1,135 @@
+:javascript
+  function SvgDividers(svg, labels, numRepeats, visible){
+    var self = this;
+
+    self.updateMembers(svg, labels, numRepeats, visible);
+    self.setDividers(labels);
+    self.setd3Labels(labels);
+    self.setVisibility(visible);
+  }
+
+  SvgDividers.prototype.updateMembers = function(svg, labels, numRepeats, visible) {
+    var self = this;
+
+    self.svg = svg ? svg : self.svg;
+    self.labels = labels ? labels : self.labels;
+    self.numRepeats = numRepeats ? numRepeats : self.numRepeats;
+    self.visible = visible !== undefined ? visible : self.visible;
+    self.numDivisions = self.labels.length*self.numRepeats;
+    self.dividerData = self.dividerData ? self.dividerData : [];
+    self.svgWidth = parseInt(self.svg.attr("width"));
+    self.svgHeight = parseInt(self.svg.attr("height"))
+    self.divisionWidth = self.svgWidth / self.numDivisions;
+  }
+
+  SvgDividers.prototype.toggleVisibility = function() {
+    return this.setVisibility(!this.visible);
+  }
+
+  SvgDividers.prototype.setVisibility = function(visible) {
+    this.visible = visible
+    this.dividers.style("display", this.visible ? "block" : "none");
+    this.d3Labels.style("display", this.visible ? "block" : "none");
+
+    if(this.visible)
+      this.d3Labels.attr("x", function(d){ return d.x - this.getComputedTextLength() / 2 })
+
+    return this.visible;
+  }
+
+  SvgDividers.prototype.updateAll = function(labels, svg, numRepeats, visible) {
+    this.updateMembers(svg,labels,numRepeats);
+    this.setLabelsAndDividers(labels, svg, numRepeats);
+    this.d3Labels.attr("x", function(d){ return d.x - this.getComputedTextLength() / 2 })
+
+    if(visible !== undefined) this.setVisibility(visible);
+    else this.setVisibility(this.visible);
+  }
+
+  SvgDividers.prototype.setLabelsAndDividers = function(labels, svg, numRepeats){
+    this.setDividers(labels, svg, numRepeats);
+    this.setd3Labels(labels, svg, numRepeats);
+  }
+
+  SvgDividers.prototype.setDividers = function(labels, _svg, _numRepeats) {
+    var self = this;
+    var svg = _svg ? _svg : self.svg, numRepeats = _numRepeats ? _numRepeats : self.numRepeats;
+
+    self.svg = svg;
+    self.numRepeats = numRepeats;
+    self.dividerData = [];
+
+    svg.selectAll("line.quarters").remove();
+    for(var i = 0; i < numRepeats;i++){
+      var index = i*(labels.length - 1);
+      for(var j = 0; j < labels.length - 1; j++){ // don't put divider over year division
+        var idx = index + j;
+        self.dividerData[idx] = {};
+        self.dividerData[idx].x1 = self.divisionWidth*(labels.length*i + j +1);
+        self.dividerData[idx].x2 = self.dividerData[idx].x1;
+        self.dividerData[idx].y1 = 0;
+        self.dividerData[idx].y2 = self.svgHeight;
+      }
+    }
+
+    self.dividers = svg.selectAll("line.quarters")
+      .data(self.dividerData);
+
+    self.dividers.enter()
+      .append("line")
+      .attr("x1", function(d){ return d.x1; })
+      .attr("x2", function(d){ return d.x2; })
+      .attr("y1", function(d){ return d.y1; })
+      .attr("y2", function(d){ return d.y2; })
+      .classed("quarters", true)
+      .style("stroke", "#000")
+      .style("stroke-dasharray", (10, 10));
+  }
+
+  SvgDividers.prototype.getLabels = function() { return this.labels }
+
+  SvgDividers.prototype.getXCenters = function() {
+    var xCenters = [];
+
+    for(var i = 0; i < this.numDivisions;i++)
+      xCenters.push(this.divisionWidth*i + this.divisionWidth / 2);
+
+    return xCenters;
+  }
+
+  SvgDividers.prototype.getDivisionWidth = function() {
+    return this.divisionWidth;
+  }
+
+  SvgDividers.prototype.setd3Labels = function(labels, _svg, _numRepeats) {
+    var self = this;
+    var svg = _svg ? _svg : self.svg, numRepeats = _numRepeats ? _numRepeats : self.numRepeats;
+
+    self.svg = svg;
+    self.numRepeats = numRepeats;
+
+    svg.selectAll("text.labels").remove();
+    self.labels = labels;
+    self.labelData = [];
+
+    for(var i = 0; i < numRepeats; i++){
+      var index = i*labels.length;
+      for(var j = 0; j < labels.length; j++){
+        var idx = index + j;
+        self.labelData[idx] = {};
+        self.labelData[idx].x = self.divisionWidth*(idx+1) - (self.divisionWidth / 2);
+        self.labelData[idx].y = 30;
+        self.labelData[idx].text = self.labels[j];
+      }
+    }
+
+    self.d3Labels = svg.selectAll("text.labels")
+      .data(self.labelData);
+
+    self.d3Labels.enter()
+      .append("text")
+      .classed("labels", true)
+      .attr("x", function(d, i){ return d.x })
+      .attr("y", function(d){ return d.y })
+      .text(function(d){ return d.text });
+  }

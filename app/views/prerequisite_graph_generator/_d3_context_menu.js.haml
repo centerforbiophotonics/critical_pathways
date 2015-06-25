@@ -1,5 +1,5 @@
 :javascript
-  d3.contextMenu = function (menus, openCallback) {
+  d3.contextMenu = function (menu, openCallback) {
   	// create the div element that will hold the context menu
   	d3.selectAll('.d3-context-menu').data([1])
   		.enter()
@@ -11,26 +11,9 @@
   		d3.select('.d3-context-menu').style('display', 'none');
   	});
 
-    function getMenuByTarget() {
-      var targetTag = d3.event.target.tagName;
-      
-      switch(targetTag){
-        case 'path':
-          return menus.default.concat(menus.path);
-          break;
-        case 'circle':
-          return menus.default.concat(menus.circle);
-          break;
-        default:
-          return menus.default;
-          break;
-      }
-    }
-
   	// this gets executed when a contextmenu event occurs
   	return function(data, index) {
   		var elm = this;
-      var menu = getMenuByTarget();
 
   		d3.selectAll('.d3-context-menu').html('');
   		var list = d3.selectAll('.d3-context-menu').append('ul');

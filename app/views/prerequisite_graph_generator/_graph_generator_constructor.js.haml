@@ -61,7 +61,10 @@
         justScaleTransGraph: false,
         lastKeyDown: -1,
         shiftNodeDrag: false,
-        selectedText: null
+        selectedText: null,
+        quarterDividersVisible: false,
+        showSummerDividers: false,
+        snapToGrid: false
       };
 
       thisGraph.menus = {
@@ -82,6 +85,60 @@
             title: 'Group Selected Paths',
             action: function(elm, d, i){
               thisGraph.contextMenuGroupPaths.call(thisGraph);
+            }
+          },
+          {
+            title: 'Toggle Quarter Dividers',
+            action: function(elm, d, i){
+              var menus = thisGraph.menus;
+
+              thisGraph.state.quarterDividersVisible = thisGraph.quarterDividers.toggleVisibility();
+
+              if(thisGraph.state.quarterDividersVisible)
+                thisGraph.svg.on("contextmenu", d3.contextMenu(menus.default.concat(menus.dividersVisible)))
+              else
+                thisGraph.svg.on("contextmenu", d3.contextMenu(menus.default));
+            }
+          },
+          {
+            title: 'Toggle Summer Sessions',
+            action: function(elm, d, i){
+              var menus = thisGraph.menus;
+              thisGraph.svg.on("contextmenu", d3.contextMenu(menus.default.concat(menus.dividersVisible)));
+
+              if(thisGraph.state.showSummerDividers){
+                thisGraph.quarterDividers.updateAll(["Fall", "Winter", "Spring"],thisGraph.svg,4,true);
+                thisGraph.state.quarterDividersVisible = true;
+              }else{
+                thisGraph.quarterDividers.updateAll(["Fall", "Winter", "Spring", "Summer 1", "Summer 2"],thisGraph.svg,4,true);
+                thisGraph.state.quarterDividersVisible = true;
+              }
+              thisGraph.state.showSummerDividers = !thisGraph.state.showSummerDividers;
+
+              if(thisGraph.state.snapToGrid){
+                var divisionWidth = thisGraph.quarterDividers.getDivisionWidth();
+                thisGraph.nodes.forEach(function(d,i){
+                  thisGraph.nodes[i].x = (divisionWidth / 2) + divisionWidth*Math.floor(d.x / divisionWidth);
+                })
+                thisGraph.updateGraph();
+              } 
+            }
+          }
+        ],
+        dividersVisible: [
+          {
+            title: function() { return thisGraph.state.snapToGrid ? 'Allow Any Course Placement' : 'Snap Courses to Nearest Grid Positions' },
+            action: function(elm, d , i) {
+
+              if(!thisGraph.state.snapToGrid){
+                var divisionWidth = thisGraph.quarterDividers.getDivisionWidth();
+                thisGraph.nodes.forEach(function(d,i){
+                  thisGraph.nodes[i].x = (divisionWidth / 2) + divisionWidth*Math.floor(d.x / divisionWidth);
+                })
+              }
+
+              thisGraph.state.snapToGrid = !thisGraph.state.snapToGrid;
+              thisGraph.updateGraph();
             }
           }
         ],
@@ -166,6 +223,9 @@
 
       thisGraph.svgWidth = parseInt(d3.select(parentId + ' svg').attr("width"));
       thisGraph.svgHeight = parseInt(d3.select(parentId + ' svg').attr("height"));
+
+
+      /* Create year dividiers */
       thisGraph.yearDividers = [{},{},{}];
       var divisionWidth = thisGraph.svgWidth / 4;
       for(var i = 0; i < 3;i++){
@@ -174,17 +234,17 @@
         thisGraph.yearDividers[i].y1 = 0;
         thisGraph.yearDividers[i].y2 = thisGraph.svgHeight;
       }
-      thisGraph.dividers = svg.selectAll("line")
+      thisGraph.dividers = svg.selectAll("line.years")
         .data(thisGraph.yearDividers);
 
       thisGraph.dividers.enter()
         .append("line")
+        .classed("years", true)
         .attr("x1", function(d){ return d.x1; })
         .attr("x2", function(d){ return d.x2; })
         .attr("y1", function(d){ return d.y1; })
         .attr("y2", function(d){ return d.y2; })
-        .style("stroke", "#000")
-        .style("stroke-dasharray", (10, 10));
+        .style("stroke", "#000");
 
       var years = [{},{},{},{}];
 
@@ -196,7 +256,7 @@
         else if(i == 3)
           years[i].x = thisGraph.svgWidth - (divisionWidth / 2);
 
-        years[i].y = 20;
+        years[i].y = 15;
         years[i].text = "Year " + (i+1);
       }
 
@@ -209,6 +269,9 @@
         .attr("x", function(d, i){ return d.x - 21.5})
         .attr("y", function(d){ return d.y })
         .text(function(d){ return d.text });
+      /* End creation of year dividers*/
+
+      thisGraph.quarterDividers = new SvgDividers(thisGraph.svg,["Fall", "Winter", "Spring"],4,false);
 
       // displayed when dragging between nodes
       thisGraph.dragLine = svgG.append('svg:path')
@@ -228,7 +291,7 @@
         })
         .on("drag", function(d){
           //CHANGED: justDragged = true was commented out
-          //thisGraph.state.justDragged = true;
+          thisGraph.state.justDragged = true;
           thisGraph.dragmove.call(thisGraph, d,this);
         })
         .on("dragend", function() {
@@ -245,7 +308,7 @@
       });
       //Listen for right click to open context menu
 
-      svg.on('contextmenu', d3.contextMenu(thisGraph.menus));
+      svg.on('contextmenu', d3.contextMenu(thisGraph.menus.default));
 
       svg.on("mousedown", function(){
         if(d3.event.button !== 0) return false;
